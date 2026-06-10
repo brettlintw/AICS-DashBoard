@@ -35,7 +35,7 @@ US_STATES_COORDS = {
 
 # 2. 數據導入
 st.sidebar.header("📥 數據導入與匯出")
-uploaded_file = st.sidebar.file_uploader("上傳 Excel 數據", type=["xlsx"])
+uploaded_file = st.sidebar.file_uploader("上傳 Excel 數據 (需包含 Data Base 分頁)", type=["xlsx"])
 bg_image = st.sidebar.file_uploader("上傳 PPT 戰報背景圖", type=["png", "jpg"])
 
 if uploaded_file:
@@ -48,11 +48,13 @@ if uploaded_file:
     selected_machines = st.sidebar.multiselect("設備類型選擇", machine_list, default=machine_list)
     date_range = st.sidebar.date_input("日期區間", value=(df['Date(出庫)'].min().date(), df['Date(出庫)'].max().date()))
     
-    f_df = df[(df['Machine Type'].isin(selected_machines)) & (df['Date(出庫)'].dt.date >= date_range[0]) & (df['Date(出庫)'].dt.date <= date_range[1])].copy()
+    f_df = df[(df['Machine Type'].isin(selected_machines)) & 
+              (df['Date(出庫)'].dt.date >= date_range[0]) & 
+              (df['Date(出庫)'].dt.date <= date_range[1])].copy()
 
     # 3. 指標顯示
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    cols = st.columns(len(selected_machines))
+st.markdown("<br><br>", unsafe_allow_html=True)
+    cols = st.columns(len(selected_machines) if len(selected_machines) > 0 else 1)
     for i, m in enumerate(selected_machines):
         val = int(f_df[f_df['Machine Type'] == m]['Outbound Qty (Item)'].sum())
         cols[i].markdown(f"<div class='label-text'>{m}</div><div class='big-metric'>{val} 台</div>", unsafe_allow_html=True)
@@ -81,7 +83,6 @@ def render_analysis_section(data, dimension, title_name):
             fig = px.line(df_group, x='Month-Year', y='Outbound Qty (Item)', color=dimension, markers=True, text='Outbound Qty (Item)')
             fig.update_traces(line=dict(width=3, shape='spline'), textposition="top center")
         elif chart_type == "柱狀圖":
-            # 修正後的柱狀圖邏輯
             fig = px.bar(df_group, x='Month-Year', y='Outbound Qty (Item)', color=dimension, barmode='group', text='Outbound Qty (Item)')
             fig.update_traces(texttemplate='%{text}', textposition='outside')
         else:
@@ -94,9 +95,13 @@ def render_analysis_section(data, dimension, title_name):
         pivot.loc['當月總計'] = pivot.sum(axis=0)
         st.dataframe(pivot.style.format("{:.0f}"), use_container_width=True)
 
+# 渲染各維度
+    for dim, name in [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]:
+        render_analysis_section(f_df, dim, name)
+
     # 6. 導出功能
-    if st.sidebar.button("📊 導出完整報告"):
-        # PPTX
+if st.sidebar.button("📊 導出完整報告"):
+        # PPTX 生成
         prs = Presentation()
         slide = prs.slides.add_slide(prs.slide_layouts[6])
         if bg_image:
@@ -105,12 +110,13 @@ def render_analysis_section(data, dimension, title_name):
         prs.save(buf_ppt)
         st.sidebar.download_button("下載 PPTX", buf_ppt.getvalue(), "Tactical_Report.pptx")
         
-        # PDF
+        # PDF 生成
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", size=16)
         pdf.cell(200, 10, txt="AICS Tactical Deployment Report", ln=True, align='C')
         buf_pdf = io.BytesIO(pdf.output(dest='S').encode('latin-1'))
         st.sidebar.download_button("下載 PDF", buf_pdf, "Tactical_Report.pdf")
+
 else:
     st.info("💡 請上傳數據檔案以啟動戰情室。")
