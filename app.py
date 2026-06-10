@@ -8,9 +8,9 @@ import io
 import datetime
 
 # 1. 初始化頁面設定
-st.set_page_config(layout="wide", page_title="AICS 北美部署決策中心 V6.1")
+st.set_page_config(layout="wide", page_title="AICS 北美部署決策中心 V6.2")
 
-st.title("🌐 AICS 北美部署決策中心 (V6.1 多維度旗艦版)")
+st.title("🌐 AICS 北美部署決策中心 (V6.2 客戶維度強化版)")
 
 # 美國 50 州中心座標資料庫 (用於地圖背景標註)
 US_STATES_COORDS = {
@@ -36,7 +36,7 @@ if uploaded_file:
     df = pd.read_excel(uploaded_file, sheet_name='Data Base')
     df.columns = df.columns.str.strip()
     df['Date(出庫)'] = pd.to_datetime(df['Date(出庫)'])
-    df['Month-Year'] = df['Date(出庫)'].dt.strftime('%Y-%m') # 用於矩陣排序
+    df['Month-Year'] = df['Date(出庫)'].dt.strftime('%Y-%m') 
 
     # 側邊欄過濾控制
     st.sidebar.markdown("---")
@@ -70,7 +70,6 @@ if uploaded_file:
     st.subheader("🗺️ 北美設備戰術分佈 (全州代碼標註)")
     fig_map = go.Figure()
     
-    # 繪製背景州代碼 (Arial Black, 14pt)
     fig_map.add_trace(go.Scattergeo(
         lon=[US_STATES_COORDS[s][1] for s in US_STATES_COORDS],
         lat=[US_STATES_COORDS[s][0] for s in US_STATES_COORDS],
@@ -80,7 +79,6 @@ if uploaded_file:
         showlegend=False
     ))
     
-    # 繪製數據氣泡
     if not f_df.empty:
         map_agg = f_df.groupby(['State Code', 'Machine Type'])['Outbound Qty (Item)'].sum().reset_index()
         for machine in selected_machines:
@@ -94,24 +92,26 @@ if uploaded_file:
     fig_map.update_layout(geo=dict(scope='usa'), height=600, margin={"r":0,"t":0,"l":0,"b":0})
     st.plotly_chart(fig_map, use_container_width=True)
 
-    # 5. 餅圖結構分析
+    # 5. 餅圖結構分析 (新增客戶占比)
     st.markdown("---")
     st.subheader("🍕 結構占比分析")
-    p1, p2, p3 = st.columns(3)
+    p1, p2, p3, p4 = st.columns(4)
     with p1:
         st.plotly_chart(px.pie(f_df, values='Outbound Qty (Item)', names='Machine Type', title="設備總占比", hole=0.4), use_container_width=True)
     with p2:
         st.plotly_chart(px.pie(f_df, values='Outbound Qty (Item)', names='Field', title="場域(Field)占比"), use_container_width=True)
     with p3:
         st.plotly_chart(px.pie(f_df, values='Outbound Qty (Item)', names='Area', title="區域(Area)占比"), use_container_width=True)
+    with p4:
+        st.plotly_chart(px.pie(f_df, values='Outbound Qty (Item)', names='Company', title="客戶(Company)占比"), use_container_width=True)
 
-    # --- 6. 多維度推移分析模組 (核心功能) ---
+    # --- 6. 多維度推移分析模組 ---
     def render_analysis_section(data, dimension, title_name):
         st.markdown("---")
         st.subheader(f"📈 {title_name} 每月出貨推移圖與明細矩陣")
         
         if not data.empty:
-            # A. 繪製推移圖 (Spline 曲線)
+            # A. 繪製推移圖
             trend_df = data.groupby(['Month-Year', dimension])['Outbound Qty (Item)'].sum().reset_index()
             trend_df = trend_df.sort_values('Month-Year')
             
@@ -120,7 +120,7 @@ if uploaded_file:
             fig_line.update_traces(textposition="top center", line=dict(width=4, shape='spline'))
             st.plotly_chart(fig_line, use_container_width=True)
             
-            # B. 建立明細矩陣 (含行列總計)
+            # B. 建立明細矩陣
             pivot = data.pivot_table(
                 index=dimension, 
                 columns='Month-Year', 
@@ -128,30 +128,27 @@ if uploaded_file:
                 aggfunc='sum', 
                 fill_value=0
             )
-            # 計算行列總計
             pivot['項目總計'] = pivot.sum(axis=1)
             pivot.loc['當月總計'] = pivot.sum(axis=0)
             
-            # 渲染表格
             st.markdown(f"#### {title_name} 數據明細表")
             st.dataframe(pivot.style.format("{:.0f}"), use_container_width=True)
         else:
             st.warning(f"當前篩選條件下無 {title_name} 數據。")
 
-    # 執行三個維度的渲染
+    # 執行維度渲染 (新增客戶維度)
     render_analysis_section(f_df, 'Machine Type', '設備維度 (Machine Type)')
     render_analysis_section(f_df, 'Field', '場域維度 (Field)')
     render_analysis_section(f_df, 'Area', '區域維度 (Area)')
+    render_analysis_section(f_df, 'Company', '客戶維度 (Company)')
 
     # 7. PowerPoint 報告匯出
     if st.sidebar.button("📊 生成專業戰報 (PPTX)"):
         prs = Presentation()
-        # 第一頁：Executive Summary
         slide = prs.slides.add_slide(prs.slide_layouts[6])
         if bg_image:
             slide.shapes.add_picture(io.BytesIO(bg_image.read()), 0, 0, width=prs.slide_width, height=prs.slide_height)
         
-        # 插入摘要表格
         rows, cols = len(selected_machines) + 2, 2
         table = slide.shapes.add_table(rows, cols, Inches(0.5), Inches(2), Inches(4), Inches(2)).table
         table.cell(0,0).text = "設備/分類"; table.cell(0,1).text = "總出貨量"
