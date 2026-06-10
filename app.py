@@ -8,17 +8,19 @@ import io
 import datetime
 
 # 1. 初始化頁面設定
-st.set_page_config(layout="wide", page_title="AICS 北美部署決策中心 V6.3")
-st.title("🌐 AICS 北美部署決策中心 (V6.3 全維度整合版)")
+st.set_page_config(layout="wide", page_title="AICS 北美部署決策中心 V7.0")
 
-# CSS 樣式注入
+# UI 優化 CSS
 st.markdown("""
     <style>
-    .big-metric { font-size: 24px; font-weight: bold; color: #e63946; }
-    .label-text { font-size: 14px; color: #457b9d; }
+    .big-metric { font-size: 50px !important; font-weight: bold; text-align: center; color: #e63946; }
+    .label-text { text-align: center; font-size: 20px; font-weight: bold; color: #457b9d; }
     </style>
     """, unsafe_allow_html=True)
 
+st.title("🌐 AICS 北美部署決策中心 (V7.0 穿透分析旗艦版)")
+
+# 美國 50 州中心座標
 US_STATES_COORDS = {
     'AL': [32.8, -86.7], 'AK': [61.3, -152.4], 'AZ': [33.7, -111.4], 'AR': [34.9, -92.3], 'CA': [36.1, -119.6],
     'CO': [39.0, -105.3], 'CT': [41.5, -72.7], 'DE': [39.3, -75.5], 'FL': [27.7, -81.6], 'GA': [33.0, -83.6],
@@ -34,8 +36,8 @@ US_STATES_COORDS = {
 
 # 2. 數據導入與處理
 st.sidebar.header("📥 數據導入與匯出")
-uploaded_file = st.sidebar.file_uploader("上傳 Excel 數據 (需包含 Data Base 分頁)", type=["xlsx"])
-bg_image = st.sidebar.file_uploader("上傳 PPT 戰報背景圖", type=["png", "jpg"])
+uploaded_file = st.sidebar.file_uploader("上傳 Excel 數據 (Data Base)", type=["xlsx"])
+bg_image = st.sidebar.file_uploader("上傳戰報背景圖", type=["png", "jpg"])
 
 if uploaded_file:
     df = pd.read_excel(uploaded_file, sheet_name='Data Base')
@@ -43,76 +45,52 @@ if uploaded_file:
     df['Date(出庫)'] = pd.to_datetime(df['Date(出庫)'])
     df['Month-Year'] = df['Date(出庫)'].dt.strftime('%Y-%m')
 
-    machine_list = df['Machine Type'].unique().tolist()
-    selected_machines = st.sidebar.multiselect("設備類型選擇", machine_list, default=machine_list)
-    date_range = st.sidebar.date_input("日期區間", value=(df['Date(出庫)'].min().date(), df['Date(出庫)'].max().date()))
-    
-    f_df = df[(df['Machine Type'].isin(selected_machines)) & 
-              (df['Date(出庫)'].dt.date >= date_range[0]) & 
-              (df['Date(出庫)'].dt.date <= date_range[1])].copy()
+    all_machines = df['Machine Type'].unique().tolist()
+    selected_machines = st.sidebar.multiselect("設備類型篩選", all_machines, default=all_machines)
+    f_df = df[df['Machine Type'].isin(selected_machines)].copy()
 
-    # 3. 指標顯示
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    cols = st.columns(len(selected_machines) if len(selected_machines) > 0 else 1)
+    # --- UI指標 ---
+    cols = st.columns(len(selected_machines))
     for i, m in enumerate(selected_machines):
         val = int(f_df[f_df['Machine Type'] == m]['Outbound Qty (Item)'].sum())
         cols[i].markdown(f"<div class='label-text'>{m}</div><div class='big-metric'>{val} 台</div>", unsafe_allow_html=True)
-    st.markdown("<br><br>", unsafe_allow_html=True)
 
-        # 4. 北美分布地圖
-    st.subheader("🗺️ 北美設備戰術分佈 (全州代碼標註)")
+    # --- 地圖標註 ---
+    st.subheader("🗺️ 北美設備戰術分佈")
     fig_map = go.Figure()
-    
-    fig_map.add_trace(go.Scattergeo(
-        lon=[US_STATES_COORDS[s][1] for s in US_STATES_COORDS],
-        lat=[US_STATES_COORDS[s][0] for s in US_STATES_COORDS],
-        text=list(US_STATES_COORDS.keys()),
-        mode='text',
-        textfont=dict(size=14, color="black", family="Arial Black"),
-        showlegend=False
-    ))
-    
     if not f_df.empty:
         map_agg = f_df.groupby(['State Code', 'Machine Type'])['Outbound Qty (Item)'].sum().reset_index()
-        for machine in selected_machines:
-            plot_data = map_agg[map_agg['Machine Type'] == machine]
-            fig_map.add_trace(go.Scattergeo(
-                locations=plot_data['State Code'], locationmode="USA-states",
-                marker=dict(size=plot_data['Outbound Qty (Item)']*3, opacity=0.6, line_width=0),
-                name=machine, text=plot_data['Outbound Qty (Item)'], hovertemplate="%{location}: %{text}台"
-            ))
-    
-    fig_map.update_layout(geo=dict(scope='usa'), height=600, margin={"r":0,"t":0,"l":0,"b":0})
+        for m in selected_machines:
+            d = map_agg[map_agg['Machine Type'] == m]
+            fig_map.add_trace(go.Scattergeo(locations=d['State Code'], locationmode="USA-states", marker=dict(size=d['Outbound Qty (Item)']*2), name=m))
+    fig_map.update_layout(geo=dict(scope='usa'), height=400, margin={"r":0,"t":0,"l":0,"b":0})
     st.plotly_chart(fig_map, use_container_width=True)
 
-    # 5. 分析模組
+    # --- 分析模組：新增時間區間切換 ---
     def render_analysis_section(data, dimension, title_name):
         st.markdown("---")
         st.subheader(f"📈 {title_name} 分析")
-        chart_type = st.radio(f"選擇 {title_name} 圖表", ["推移圖", "柱狀圖", "餅圖"], horizontal=True, key=title_name)
-        df_group = data.groupby(['Month-Year', dimension])['Outbound Qty (Item)'].sum().reset_index().sort_values('Month-Year')
         
-        if chart_type == "推移圖":
-            fig = px.line(df_group, x='Month-Year', y='Outbound Qty (Item)', color=dimension, markers=True, text='Outbound Qty (Item)')
-            fig.update_traces(line=dict(width=3, shape='spline'), textposition="top center")
-        elif chart_type == "柱狀圖":
-            fig = px.bar(df_group, x='Month-Year', y='Outbound Qty (Item)', color=dimension, barmode='group', text='Outbound Qty (Item)')
-            fig.update_traces(texttemplate='%{text}', textposition='outside')
+        mode = st.radio(f"資料檢視模式 ({title_name})", ["月份推移", "所有區間彙總"], horizontal=True, key=f"mode_{title_name}")
+        
+        if mode == "月份推移":
+            df_group = data.groupby(['Month-Year', dimension])['Outbound Qty (Item)'].sum().reset_index().sort_values('Month-Year')
+            fig = px.bar(df_group, x='Month-Year', y='Outbound Qty (Item)', color=dimension, barmode='group')
+            st.plotly_chart(fig, use_container_width=True)
+            pivot = data.pivot_table(index=dimension, columns='Month-Year', values='Outbound Qty (Item)', aggfunc='sum', fill_value=0)
         else:
-            fig = px.pie(data, values='Outbound Qty (Item)', names=dimension)
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        pivot = data.pivot_table(index=dimension, columns='Month-Year', values='Outbound Qty (Item)', aggfunc='sum', fill_value=0)
-        pivot['項目總計'] = pivot.sum(axis=1)
-        pivot.loc['當月總計'] = pivot.sum(axis=0)
+            df_total = data.groupby(dimension)['Outbound Qty (Item)'].sum().reset_index()
+            fig = px.pie(df_total, values='Outbound Qty (Item)', names=dimension, hole=0.3)
+            st.plotly_chart(fig, use_container_width=True)
+            pivot = data.groupby(dimension)[['Outbound Qty (Item)']].sum().rename(columns={'Outbound Qty (Item)': '總計'})
+            
         st.dataframe(pivot.style.format("{:.0f}"), use_container_width=True)
 
-    # 渲染各維度
+    # 渲染全維度
     for dim, name in [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]:
         render_analysis_section(f_df, dim, name)
 
-    # 6. 匯出報告功能
+    # --- 匯出功能 ---
     if st.sidebar.button("📊 導出完整報告"):
         prs = Presentation()
         slide = prs.slides.add_slide(prs.slide_layouts[6])
@@ -125,8 +103,8 @@ if uploaded_file:
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", size=16)
-        pdf.cell(200, 10, txt="AICS Tactical Deployment Report", ln=True, align='C')
-        buf_pdf = io.BytesIO(pdf.output(dest='S').encode('latin-1'))
+        pdf.cell(200, 10, txt="AICS Tactical Report", ln=True, align='C')
+        buf_pdf = pdf.output(dest='S').encode('latin-1')
         st.sidebar.download_button("下載 PDF", buf_pdf, "Tactical_Report.pdf")
 
 else:
