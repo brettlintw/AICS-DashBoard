@@ -3,24 +3,23 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from pptx import Presentation
+from pptx.util import Inches
 from fpdf import FPDF
 import io
 import datetime
 
 # 1. 初始化頁面設定
-st.set_page_config(layout="wide", page_title="AICS 北美部署決策中心 V6.9")
+st.set_page_config(layout="wide", page_title="AICS 北美部署決策中心 V6.3")
+st.title("🌐 AICS 北美部署決策中心 (V6.3 全維度整合版)")
 
-# UI 優化 CSS
+# CSS 樣式注入
 st.markdown("""
     <style>
-    .big-metric { font-size: 50px !important; font-weight: bold; text-align: center; color: #e63946; }
-    .label-text { text-align: center; font-size: 20px; font-weight: bold; color: #457b9d; }
+    .big-metric { font-size: 24px; font-weight: bold; color: #e63946; }
+    .label-text { font-size: 14px; color: #457b9d; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🌐 AICS 北美部署決策中心 (V6.9 全維度旗艦整合版)")
-
-# 美國 50 州中心座標
 US_STATES_COORDS = {
     'AL': [32.8, -86.7], 'AK': [61.3, -152.4], 'AZ': [33.7, -111.4], 'AR': [34.9, -92.3], 'CA': [36.1, -119.6],
     'CO': [39.0, -105.3], 'CT': [41.5, -72.7], 'DE': [39.3, -75.5], 'FL': [27.7, -81.6], 'GA': [33.0, -83.6],
@@ -34,10 +33,10 @@ US_STATES_COORDS = {
     'VA': [37.7, -78.1], 'WA': [47.4, -120.4], 'WV': [38.4, -80.9], 'WI': [44.2, -89.6], 'WY': [42.7, -107.3]
 }
 
-# 2. 數據導入與處理
+# 2. 數據導入
 st.sidebar.header("📥 數據導入與匯出")
-uploaded_file = st.sidebar.file_uploader("上傳 Excel 數據 (Data Base)", type=["xlsx"])
-bg_image = st.sidebar.file_uploader("上傳戰報背景圖", type=["png", "jpg"])
+uploaded_file = st.sidebar.file_uploader("上傳 Excel 數據", type=["xlsx"])
+bg_image = st.sidebar.file_uploader("上傳 PPT 戰報背景圖", type=["png", "jpg"])
 
 if uploaded_file:
     df = pd.read_excel(uploaded_file, sheet_name='Data Base')
@@ -45,11 +44,13 @@ if uploaded_file:
     df['Date(出庫)'] = pd.to_datetime(df['Date(出庫)'])
     df['Month-Year'] = df['Date(出庫)'].dt.strftime('%Y-%m')
 
-    all_machines = df['Machine Type'].unique().tolist()
-    selected_machines = st.sidebar.multiselect("設備類型篩選", all_machines, default=all_machines)
-    f_df = df[df['Machine Type'].isin(selected_machines)].copy()
+    machine_list = df['Machine Type'].unique().tolist()
+    selected_machines = st.sidebar.multiselect("設備類型選擇", machine_list, default=machine_list)
+    date_range = st.sidebar.date_input("日期區間", value=(df['Date(出庫)'].min().date(), df['Date(出庫)'].max().date()))
+    
+    f_df = df[(df['Machine Type'].isin(selected_machines)) & (df['Date(出庫)'].dt.date >= date_range[0]) & (df['Date(出庫)'].dt.date <= date_range[1])].copy()
 
-    # --- UI優化：指標顯示 ---
+    # 3. 指標顯示
     st.markdown("<br><br>", unsafe_allow_html=True)
     cols = st.columns(len(selected_machines))
     for i, m in enumerate(selected_machines):
@@ -57,15 +58,10 @@ if uploaded_file:
         cols[i].markdown(f"<div class='label-text'>{m}</div><div class='big-metric'>{val} 台</div>", unsafe_allow_html=True)
     st.markdown("<br><br>", unsafe_allow_html=True)
 
-    # --- 地圖標註模組 ---
+    # 4. 地圖標註
     st.subheader("🗺️ 北美設備戰術分佈 (全州代碼標註)")
     fig_map = go.Figure()
-    fig_map.add_trace(go.Scattergeo(
-        lon=[US_STATES_COORDS[s][1] for s in US_STATES_COORDS],
-        lat=[US_STATES_COORDS[s][0] for s in US_STATES_COORDS],
-        text=list(US_STATES_COORDS.keys()), mode='text',
-        textfont=dict(size=12, color="black", family="Arial Black"), showlegend=False
-    ))
+    fig_map.add_trace(go.Scattergeo(lon=[US_STATES_COORDS[s][1] for s in US_STATES_COORDS], lat=[US_STATES_COORDS[s][0] for s in US_STATES_COORDS], text=list(US_STATES_COORDS.keys()), mode='text', textfont=dict(size=12, color="black", family="Arial Black"), showlegend=False))
     if not f_df.empty:
         map_agg = f_df.groupby(['State Code', 'Machine Type'])['Outbound Qty (Item)'].sum().reset_index()
         for m in selected_machines:
@@ -74,7 +70,7 @@ if uploaded_file:
     fig_map.update_layout(geo=dict(scope='usa'), height=500, margin={"r":0,"t":0,"l":0,"b":0})
     st.plotly_chart(fig_map, use_container_width=True)
 
-    # --- 分析模組：動態圖表與矩陣 ---
+    # 5. 分析模組
     def render_analysis_section(data, dimension, title_name):
         st.markdown("---")
         st.subheader(f"📈 {title_name} 分析")
@@ -83,7 +79,6 @@ if uploaded_file:
         
         if chart_type == "推移圖":
             fig = px.line(df_group, x='Month-Year', y='Outbound Qty (Item)', color=dimension, markers=True, text='Outbound Qty (Item)')
-            fig.update_xaxes(dtick=1) # 強制顯示每個月
             fig.update_traces(line=dict(width=3, shape='spline'), textposition="top center")
         elif chart_type == "柱狀圖":
             fig = px.bar(df_group, x='Month-Year', y='Outbound Qty (Item)', color=dimension, barmode='group')
@@ -96,12 +91,12 @@ if uploaded_file:
         pivot.loc['當月總計'] = pivot.sum(axis=0)
         st.dataframe(pivot.style.format("{:.0f}"), use_container_width=True)
 
-    # 渲染全維度
     for dim, name in [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]:
         render_analysis_section(f_df, dim, name)
 
-    # --- 匯出功能 ---
+    # 6. 導出功能
     if st.sidebar.button("📊 導出完整報告"):
+        # PPTX
         prs = Presentation()
         slide = prs.slides.add_slide(prs.slide_layouts[6])
         if bg_image:
@@ -110,12 +105,12 @@ if uploaded_file:
         prs.save(buf_ppt)
         st.sidebar.download_button("下載 PPTX", buf_ppt.getvalue(), "Tactical_Report.pptx")
         
+        # PDF
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", size=16)
         pdf.cell(200, 10, txt="AICS Tactical Deployment Report", ln=True, align='C')
-        buf_pdf = pdf.output(dest='S').encode('latin-1')
+        buf_pdf = io.BytesIO(pdf.output(dest='S').encode('latin-1'))
         st.sidebar.download_button("下載 PDF", buf_pdf, "Tactical_Report.pdf")
-
 else:
     st.info("💡 請上傳數據檔案以啟動戰情室。")
