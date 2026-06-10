@@ -3,7 +3,6 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from pptx import Presentation
-from pptx.util import Inches
 from fpdf import FPDF
 import io
 import datetime
@@ -83,9 +82,9 @@ if uploaded_file:
         df_group = data.groupby(['Month-Year', dimension])['Outbound Qty (Item)'].sum().reset_index().sort_values('Month-Year')
         
         if chart_type == "推移圖":
-            fig = px.line(df_group, x='Month-Year', y='Outbound Qty (Item)', color=dimension, markers=True)
+            fig = px.line(df_group, x='Month-Year', y='Outbound Qty (Item)', color=dimension, markers=True, text='Outbound Qty (Item)')
             fig.update_xaxes(dtick=1) # 強制顯示每個月
-            fig.update_traces(line=dict(width=3, shape='spline'))
+            fig.update_traces(line=dict(width=3, shape='spline'), textposition="top center")
         elif chart_type == "柱狀圖":
             fig = px.bar(df_group, x='Month-Year', y='Outbound Qty (Item)', color=dimension, barmode='group')
         else:
@@ -98,12 +97,11 @@ if uploaded_file:
         st.dataframe(pivot.style.format("{:.0f}"), use_container_width=True)
 
     # 渲染全維度
-    for dim, name in [('Machine Type', '設備'), ('Field', '場域'), ('Area', '區域'), ('Company', '客戶'), ('Device/Platform', '平台')]:
+    for dim, name in [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]:
         render_analysis_section(f_df, dim, name)
 
     # --- 匯出功能 ---
     if st.sidebar.button("📊 導出完整報告"):
-        # PPTX
         prs = Presentation()
         slide = prs.slides.add_slide(prs.slide_layouts[6])
         if bg_image:
@@ -112,7 +110,6 @@ if uploaded_file:
         prs.save(buf_ppt)
         st.sidebar.download_button("下載 PPTX", buf_ppt.getvalue(), "Tactical_Report.pptx")
         
-        # PDF
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", size=16)
