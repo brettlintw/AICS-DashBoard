@@ -71,7 +71,7 @@ if uploaded_file:
     st.plotly_chart(fig_map, use_container_width=True)
 
     # 5. 分析模組
-    def render_analysis_section(data, dimension, title_name):
+def render_analysis_section(data, dimension, title_name):
         st.markdown("---")
         st.subheader(f"📈 {title_name} 分析")
         chart_type = st.radio(f"選擇 {title_name} 圖表", ["推移圖", "柱狀圖", "餅圖"], horizontal=True, key=title_name)
@@ -81,18 +81,18 @@ if uploaded_file:
             fig = px.line(df_group, x='Month-Year', y='Outbound Qty (Item)', color=dimension, markers=True, text='Outbound Qty (Item)')
             fig.update_traces(line=dict(width=3, shape='spline'), textposition="top center")
         elif chart_type == "柱狀圖":
-            fig = px.bar(df_group, x='Month-Year', y='Outbound Qty (Item)', color=dimension, barmode='group')
+            # 修正後的柱狀圖邏輯
+            fig = px.bar(df_group, x='Month-Year', y='Outbound Qty (Item)', color=dimension, barmode='group', text='Outbound Qty (Item)')
+            fig.update_traces(texttemplate='%{text}', textposition='outside')
         else:
             fig = px.pie(data, values='Outbound Qty (Item)', names=dimension)
+        
         st.plotly_chart(fig, use_container_width=True)
         
         pivot = data.pivot_table(index=dimension, columns='Month-Year', values='Outbound Qty (Item)', aggfunc='sum', fill_value=0)
         pivot['項目總計'] = pivot.sum(axis=1)
         pivot.loc['當月總計'] = pivot.sum(axis=0)
         st.dataframe(pivot.style.format("{:.0f}"), use_container_width=True)
-
-    for dim, name in [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]:
-        render_analysis_section(f_df, dim, name)
 
     # 6. 導出功能
     if st.sidebar.button("📊 導出完整報告"):
