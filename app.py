@@ -85,7 +85,7 @@ if uploaded_file:
     fig_map.update_layout(geo=dict(scope='usa'), height=600, margin={"r":0,"t":0,"l":0,"b":0})
     st.plotly_chart(fig_map, use_container_width=True)
 
-    # 4. 分析模組
+    # 5. 分析模組
     def render_analysis_section(data, dimension, title_name):
         st.markdown("---")
         st.subheader(f"📈 {title_name} 分析")
@@ -112,7 +112,7 @@ if uploaded_file:
     for dim, name in [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]:
         render_analysis_section(f_df, dim, name)
 
-    # 5. 匯出報告功能
+    # 6. 匯出報告功能
     if st.sidebar.button("📊 導出完整報告"):
         prs = Presentation()
         slide = prs.slides.add_slide(prs.slide_layouts[6])
