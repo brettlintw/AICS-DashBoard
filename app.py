@@ -59,6 +59,32 @@ if uploaded_file:
         cols[i].markdown(f"<div class='label-text'>{m}</div><div class='big-metric'>{val} 台</div>", unsafe_allow_html=True)
     st.markdown("<br><br>", unsafe_allow_html=True)
 
+        # 4. 北美分布地圖
+    st.subheader("🗺️ 北美設備戰術分佈 (全州代碼標註)")
+    fig_map = go.Figure()
+    
+    fig_map.add_trace(go.Scattergeo(
+        lon=[US_STATES_COORDS[s][1] for s in US_STATES_COORDS],
+        lat=[US_STATES_COORDS[s][0] for s in US_STATES_COORDS],
+        text=list(US_STATES_COORDS.keys()),
+        mode='text',
+        textfont=dict(size=14, color="black", family="Arial Black"),
+        showlegend=False
+    ))
+    
+    if not f_df.empty:
+        map_agg = f_df.groupby(['State Code', 'Machine Type'])['Outbound Qty (Item)'].sum().reset_index()
+        for machine in selected_machines:
+            plot_data = map_agg[map_agg['Machine Type'] == machine]
+            fig_map.add_trace(go.Scattergeo(
+                locations=plot_data['State Code'], locationmode="USA-states",
+                marker=dict(size=plot_data['Outbound Qty (Item)']*3, opacity=0.6, line_width=0),
+                name=machine, text=plot_data['Outbound Qty (Item)'], hovertemplate="%{location}: %{text}台"
+            ))
+    
+    fig_map.update_layout(geo=dict(scope='usa'), height=600, margin={"r":0,"t":0,"l":0,"b":0})
+    st.plotly_chart(fig_map, use_container_width=True)
+
     # 4. 分析模組
     def render_analysis_section(data, dimension, title_name):
         st.markdown("---")
