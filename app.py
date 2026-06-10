@@ -8,11 +8,10 @@ import io
 import datetime
 
 # 1. 初始化頁面設定
-st.set_page_config(layout="wide", page_title="AICS 北美部署決策中心 V6.2")
+st.set_page_config(layout="wide", page_title="AICS 北美部署決策中心 V6.3")
+st.title("🌐 AICS 北美部署決策中心 (V6.3 全維度整合版)")
 
-st.title("🌐 AICS 北美部署決策中心 (V6.2 客戶維度強化版)")
-
-# 美國 50 州中心座標資料庫 (用於地圖背景標註)
+# 美國 50 州中心座標
 US_STATES_COORDS = {
     'AL': [32.8, -86.7], 'AK': [61.3, -152.4], 'AZ': [33.7, -111.4], 'AR': [34.9, -92.3], 'CA': [36.1, -119.6],
     'CO': [39.0, -105.3], 'CT': [41.5, -72.7], 'DE': [39.3, -75.5], 'FL': [27.7, -81.6], 'GA': [33.0, -83.6],
@@ -92,7 +91,7 @@ if uploaded_file:
     fig_map.update_layout(geo=dict(scope='usa'), height=600, margin={"r":0,"t":0,"l":0,"b":0})
     st.plotly_chart(fig_map, use_container_width=True)
 
-    # 5. 餅圖結構分析 (新增客戶占比)
+    # 5. 餅圖結構分析
     st.markdown("---")
     st.subheader("🍕 結構占比分析")
     p1, p2, p3, p4 = st.columns(4)
@@ -108,10 +107,10 @@ if uploaded_file:
     # --- 6. 多維度推移分析模組 ---
     def render_analysis_section(data, dimension, title_name):
         st.markdown("---")
-        st.subheader(f"📈 {title_name} 每月出貨推移圖與明細矩陣")
+        st.subheader(f"📈 {title_name} 每月出貨推移與數據明細矩陣")
         
         if not data.empty:
-            # A. 繪製推移圖
+            # A. 繪製推移圖 (Spline 曲線)
             trend_df = data.groupby(['Month-Year', dimension])['Outbound Qty (Item)'].sum().reset_index()
             trend_df = trend_df.sort_values('Month-Year')
             
@@ -136,11 +135,13 @@ if uploaded_file:
         else:
             st.warning(f"當前篩選條件下無 {title_name} 數據。")
 
-    # 執行維度渲染 (新增客戶維度)
+    # 執行維度渲染
     render_analysis_section(f_df, 'Machine Type', '設備維度 (Machine Type)')
     render_analysis_section(f_df, 'Field', '場域維度 (Field)')
     render_analysis_section(f_df, 'Area', '區域維度 (Area)')
     render_analysis_section(f_df, 'Company', '客戶維度 (Company)')
+    # 新增維度：Device/Platform
+    render_analysis_section(f_df, 'Device/Platform', '平台維度 (Device/Platform)')
 
     # 7. PowerPoint 報告匯出
     if st.sidebar.button("📊 生成專業戰報 (PPTX)"):
