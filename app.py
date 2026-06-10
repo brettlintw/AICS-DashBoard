@@ -3,7 +3,6 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from pptx import Presentation
-from pptx.util import Inches
 from fpdf import FPDF
 import io
 import datetime
@@ -33,7 +32,7 @@ US_STATES_COORDS = {
     'VA': [37.7, -78.1], 'WA': [47.4, -120.4], 'WV': [38.4, -80.9], 'WI': [44.2, -89.6], 'WY': [42.7, -107.3]
 }
 
-# 2. 數據導入
+# 2. 數據導入與處理
 st.sidebar.header("📥 數據導入與匯出")
 uploaded_file = st.sidebar.file_uploader("上傳 Excel 數據 (需包含 Data Base 分頁)", type=["xlsx"])
 bg_image = st.sidebar.file_uploader("上傳 PPT 戰報背景圖", type=["png", "jpg"])
@@ -53,27 +52,15 @@ if uploaded_file:
               (df['Date(出庫)'].dt.date <= date_range[1])].copy()
 
     # 3. 指標顯示
-st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("<br><br>", unsafe_allow_html=True)
     cols = st.columns(len(selected_machines) if len(selected_machines) > 0 else 1)
     for i, m in enumerate(selected_machines):
         val = int(f_df[f_df['Machine Type'] == m]['Outbound Qty (Item)'].sum())
         cols[i].markdown(f"<div class='label-text'>{m}</div><div class='big-metric'>{val} 台</div>", unsafe_allow_html=True)
     st.markdown("<br><br>", unsafe_allow_html=True)
 
-    # 4. 地圖標註
-    st.subheader("🗺️ 北美設備戰術分佈 (全州代碼標註)")
-    fig_map = go.Figure()
-    fig_map.add_trace(go.Scattergeo(lon=[US_STATES_COORDS[s][1] for s in US_STATES_COORDS], lat=[US_STATES_COORDS[s][0] for s in US_STATES_COORDS], text=list(US_STATES_COORDS.keys()), mode='text', textfont=dict(size=12, color="black", family="Arial Black"), showlegend=False))
-    if not f_df.empty:
-        map_agg = f_df.groupby(['State Code', 'Machine Type'])['Outbound Qty (Item)'].sum().reset_index()
-        for m in selected_machines:
-            d = map_agg[map_agg['Machine Type'] == m]
-            fig_map.add_trace(go.Scattergeo(locations=d['State Code'], locationmode="USA-states", marker=dict(size=d['Outbound Qty (Item)']*2), name=m))
-    fig_map.update_layout(geo=dict(scope='usa'), height=500, margin={"r":0,"t":0,"l":0,"b":0})
-    st.plotly_chart(fig_map, use_container_width=True)
-
-    # 5. 分析模組
-def render_analysis_section(data, dimension, title_name):
+    # 4. 分析模組
+    def render_analysis_section(data, dimension, title_name):
         st.markdown("---")
         st.subheader(f"📈 {title_name} 分析")
         chart_type = st.radio(f"選擇 {title_name} 圖表", ["推移圖", "柱狀圖", "餅圖"], horizontal=True, key=title_name)
@@ -95,13 +82,12 @@ def render_analysis_section(data, dimension, title_name):
         pivot.loc['當月總計'] = pivot.sum(axis=0)
         st.dataframe(pivot.style.format("{:.0f}"), use_container_width=True)
 
-# 渲染各維度
+    # 渲染各維度
     for dim, name in [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]:
         render_analysis_section(f_df, dim, name)
 
-    # 6. 導出功能
-if st.sidebar.button("📊 導出完整報告"):
-        # PPTX 生成
+    # 5. 匯出報告功能
+    if st.sidebar.button("📊 導出完整報告"):
         prs = Presentation()
         slide = prs.slides.add_slide(prs.slide_layouts[6])
         if bg_image:
@@ -110,7 +96,6 @@ if st.sidebar.button("📊 導出完整報告"):
         prs.save(buf_ppt)
         st.sidebar.download_button("下載 PPTX", buf_ppt.getvalue(), "Tactical_Report.pptx")
         
-        # PDF 生成
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", size=16)
