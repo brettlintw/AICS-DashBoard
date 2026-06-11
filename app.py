@@ -39,6 +39,17 @@ if uploaded_file:
     df = pd.read_excel(uploaded_file, sheet_name='Data Base')
     df.columns = df.columns.str.strip()
     df['Date(出庫)'] = pd.to_datetime(df['Date(出庫)'])
+    
+    # --- 新增日期篩選邏輯 ---
+    min_date = df['Date(出庫)'].min().date()
+    max_date = df['Date(出庫)'].max().date()
+    date_range = st.sidebar.date_input("日期區間篩選", [min_date, max_date])
+    
+    if len(date_range) == 2:
+        start_date, end_date = date_range
+        df = df[(df['Date(出庫)'].dt.date >= start_date) & (df['Date(出庫)'].dt.date <= end_date)]
+    # -----------------------
+
     df['Month-Year'] = df['Date(出庫)'].dt.strftime('%Y-%m')
 
     selected_machines = st.sidebar.multiselect("設備類型篩選", df['Machine Type'].unique(), default=df['Machine Type'].unique())
@@ -50,7 +61,7 @@ if uploaded_file:
         val = int(f_df[f_df['Machine Type'] == m]['Outbound Qty (Item)'].sum())
         cols[i].markdown(f"<div class='label-text'>{m}</div><div class='big-metric'>{val} 台</div>", unsafe_allow_html=True)
 
-    # 地圖模組 (原架構)
+    # 地圖模組
     st.subheader("🗺️ 北美設備戰術分佈")
     fig_map = go.Figure()
     fig_map.add_trace(go.Scattergeo(lon=[US_STATES_COORDS[s][1] for s in US_STATES_COORDS], lat=[US_STATES_COORDS[s][0] for s in US_STATES_COORDS], text=list(US_STATES_COORDS.keys()), mode='text', textfont=dict(size=14), showlegend=False))
@@ -62,13 +73,11 @@ if uploaded_file:
     fig_map.update_layout(geo=dict(scope='usa'), height=600, margin={"r":0,"t":0,"l":0,"b":0})
     st.plotly_chart(fig_map, use_container_width=True)
 
-    # 分析模組 (新增檢視模式切換)
+    # 分析模組
     def render_analysis_section(data, dimension, title_name):
         st.markdown("---")
         st.subheader(f"📈 {title_name} 分析")
-        
-        # 模式切換：月份趨勢 vs 全時間彙總
-        mode = st.radio(f"資料檢視模式 ({title_name})", ["月份推移", "全時間段彙總"], horizontal=True, key=f"mode_{dimension}")
+        mode = st.radio(f"檢視模式 ({title_name})", ["月份推移", "全時間段彙總"], horizontal=True, key=f"mode_{dimension}")
         chart_type = st.radio(f"選擇 {title_name} 圖表", ["推移圖", "柱狀圖", "餅圖"], horizontal=True, key=f"chart_{dimension}")
         
         if mode == "月份推移":
@@ -90,16 +99,14 @@ if uploaded_file:
         pivot = data.pivot_table(index=dimension, columns='Month-Year' if mode=="月份推移" else None, values='Outbound Qty (Item)', aggfunc='sum', fill_value=0)
         st.dataframe(pivot.style.format("{:.0f}"), use_container_width=True)
 
-    # 執行所有維度渲染
     for dim, name in [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]:
         render_analysis_section(f_df, dim, name)
 
-    # 匯出報告
     if st.sidebar.button("📊 導出完整報告"):
         prs = Presentation()
         slide = prs.slides.add_slide(prs.slide_layouts[6])
         if bg_image: slide.shapes.add_picture(io.BytesIO(bg_image.read()), 0, 0, width=prs.slide_width)
-        buf_ppt = io.BytesIO(); prs.save(buf_ppt)
-        st.sidebar.download_button("下載 PPTX", buf_ppt.getvalue(), "Tactical_Report.pptx")
+        buf = io.BytesIO(); prs.save(buf)
+        st.sidebar.download_button("下載 PPTX", buf.getvalue(), "Tactical_Report.pptx")
 else:
     st.info("💡 請上傳數據檔案以啟動戰情室。")
