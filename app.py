@@ -8,8 +8,8 @@ import io
 import datetime
 
 # 1. 初始化頁面設定
-st.set_page_config(layout="wide", page_title="AICS 北美部署決策中心 V6.4")
-st.title("🌐 AICS 北美部署決策中心 (V6.4 多維度綜合分析版)")
+st.set_page_config(layout="wide", page_title="AICS 北美部署決策中心 V6.5")
+st.title("🌐 AICS 北美部署決策中心 (V6.5 排序優化旗艦版)")
 
 # CSS 樣式
 st.markdown("""
@@ -40,18 +40,15 @@ if uploaded_file:
     df.columns = df.columns.str.strip()
     df['Date(出庫)'] = pd.to_datetime(df['Date(出庫)'])
     
-    # --- 新增日期篩選邏輯 ---
+    # 日期區間篩選
     min_date = df['Date(出庫)'].min().date()
     max_date = df['Date(出庫)'].max().date()
     date_range = st.sidebar.date_input("日期區間篩選", [min_date, max_date])
     
     if len(date_range) == 2:
-        start_date, end_date = date_range
-        df = df[(df['Date(出庫)'].dt.date >= start_date) & (df['Date(出庫)'].dt.date <= end_date)]
-    # -----------------------
-
+        df = df[(df['Date(出庫)'].dt.date >= date_range[0]) & (df['Date(出庫)'].dt.date <= date_range[1])]
+    
     df['Month-Year'] = df['Date(出庫)'].dt.strftime('%Y-%m')
-
     selected_machines = st.sidebar.multiselect("設備類型篩選", df['Machine Type'].unique(), default=df['Machine Type'].unique())
     f_df = df[df['Machine Type'].isin(selected_machines)].copy()
 
@@ -73,30 +70,40 @@ if uploaded_file:
     fig_map.update_layout(geo=dict(scope='usa'), height=600, margin={"r":0,"t":0,"l":0,"b":0})
     st.plotly_chart(fig_map, use_container_width=True)
 
-    # 分析模組
+    # 分析模組 (含排序功能)
     def render_analysis_section(data, dimension, title_name):
         st.markdown("---")
         st.subheader(f"📈 {title_name} 分析")
-        mode = st.radio(f"檢視模式 ({title_name})", ["月份推移", "全時間段彙總"], horizontal=True, key=f"mode_{dimension}")
+        
+        mode = st.radio(f"資料檢視模式 ({title_name})", ["月份推移", "全時間段彙總"], horizontal=True, key=f"mode_{dimension}")
         chart_type = st.radio(f"選擇 {title_name} 圖表", ["推移圖", "柱狀圖", "餅圖"], horizontal=True, key=f"chart_{dimension}")
         
+        sort_order = None
+        if mode == "全時間段彙總":
+            sort_order = st.selectbox(f"排序方式 ({title_name})", ["預設", "由大至小", "由小至大"], key=f"sort_{dimension}")
+
         if mode == "月份推移":
             df_g = data.groupby(['Month-Year', dimension])['Outbound Qty (Item)'].sum().reset_index()
             x_axis = 'Month-Year'
+            pivot = data.pivot_table(index=dimension, columns='Month-Year', values='Outbound Qty (Item)', aggfunc='sum', fill_value=0)
         else:
             df_g = data.groupby(dimension)[['Outbound Qty (Item)']].sum().reset_index()
+            if sort_order == "由大至小":
+                df_g = df_g.sort_values(by='Outbound Qty (Item)', ascending=False)
+            elif sort_order == "由小至大":
+                df_g = df_g.sort_values(by='Outbound Qty (Item)', ascending=True)
             x_axis = dimension
+            pivot = df_g.set_index(dimension)
 
         if chart_type == "推移圖":
             fig = px.line(df_g, x=x_axis, y='Outbound Qty (Item)', color=dimension, markers=True, text='Outbound Qty (Item)')
             fig.update_traces(textposition="top center")
         elif chart_type == "柱狀圖":
-            fig = px.bar(df_g, x=x_axis, y='Outbound Qty (Item)', color=dimension, barmode='group', text='Outbound Qty (Item)')
+            fig = px.bar(df_g, x=x_axis, y='Outbound Qty (Item)', color=dimension, barmode='group' if mode=="月份推移" else None, text='Outbound Qty (Item)')
         else:
             fig = px.pie(df_g, values='Outbound Qty (Item)', names=dimension)
             
         st.plotly_chart(fig, use_container_width=True)
-        pivot = data.pivot_table(index=dimension, columns='Month-Year' if mode=="月份推移" else None, values='Outbound Qty (Item)', aggfunc='sum', fill_value=0)
         st.dataframe(pivot.style.format("{:.0f}"), use_container_width=True)
 
     for dim, name in [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]:
