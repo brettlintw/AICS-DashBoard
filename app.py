@@ -8,8 +8,8 @@ import io
 import datetime
 
 # 1. 初始化頁面設定
-st.set_page_config(layout="wide", page_title="AICS 北美部署決策中心 V6.4-修正版")
-st.title("🌐 AICS 北美部署決策中心 (V6.4 修正版：新增全時間段彙總)")
+st.set_page_config(layout="wide", page_title="AICS 北美部署決策中心 V6.4")
+st.title("🌐 AICS 北美部署決策中心 (V6.4 多維度綜合分析版)")
 
 # CSS 樣式
 st.markdown("""
@@ -19,7 +19,6 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# 座標資料
 US_STATES_COORDS = {
     'AL': [32.8, -86.7], 'AK': [61.3, -152.4], 'AZ': [33.7, -111.4], 'AR': [34.9, -92.3], 'CA': [36.1, -119.6],
     'CO': [39.0, -105.3], 'CT': [41.5, -72.7], 'DE': [39.3, -75.5], 'FL': [27.7, -81.6], 'GA': [33.0, -83.6],
@@ -42,42 +41,60 @@ if uploaded_file:
     df['Date(出庫)'] = pd.to_datetime(df['Date(出庫)'])
     df['Month-Year'] = df['Date(出庫)'].dt.strftime('%Y-%m')
 
-    all_machines = df['Machine Type'].unique().tolist()
-    selected_machines = st.sidebar.multiselect("設備類型篩選", all_machines, default=all_machines)
+    selected_machines = st.sidebar.multiselect("設備類型篩選", df['Machine Type'].unique(), default=df['Machine Type'].unique())
     f_df = df[df['Machine Type'].isin(selected_machines)].copy()
 
-    # 地圖模組 (補回)
+    # 指標顯示
+    cols = st.columns(len(selected_machines) if len(selected_machines) > 0 else 1)
+    for i, m in enumerate(selected_machines):
+        val = int(f_df[f_df['Machine Type'] == m]['Outbound Qty (Item)'].sum())
+        cols[i].markdown(f"<div class='label-text'>{m}</div><div class='big-metric'>{val} 台</div>", unsafe_allow_html=True)
+
+    # 地圖模組 (原架構)
     st.subheader("🗺️ 北美設備戰術分佈")
     fig_map = go.Figure()
-    map_agg = f_df.groupby(['State Code', 'Machine Type'])['Outbound Qty (Item)'].sum().reset_index()
-    for m in selected_machines:
-        d = map_agg[map_agg['Machine Type'] == m]
-        fig_map.add_trace(go.Scattergeo(locations=d['State Code'], locationmode="USA-states", marker=dict(size=d['Outbound Qty (Item)'], opacity=0.7), name=m))
-    fig_map.update_layout(geo=dict(scope='usa'), height=400)
+    fig_map.add_trace(go.Scattergeo(lon=[US_STATES_COORDS[s][1] for s in US_STATES_COORDS], lat=[US_STATES_COORDS[s][0] for s in US_STATES_COORDS], text=list(US_STATES_COORDS.keys()), mode='text', textfont=dict(size=14), showlegend=False))
+    if not f_df.empty:
+        map_agg = f_df.groupby(['State Code', 'Machine Type'])['Outbound Qty (Item)'].sum().reset_index()
+        for m in selected_machines:
+            d = map_agg[map_agg['Machine Type'] == m]
+            fig_map.add_trace(go.Scattergeo(locations=d['State Code'], locationmode="USA-states", marker=dict(size=d['Outbound Qty (Item)']*3), name=m))
+    fig_map.update_layout(geo=dict(scope='usa'), height=600, margin={"r":0,"t":0,"l":0,"b":0})
     st.plotly_chart(fig_map, use_container_width=True)
 
-    # 分析模組 (新增全時間段檢視)
+    # 分析模組 (新增檢視模式切換)
     def render_analysis_section(data, dimension, title_name):
         st.markdown("---")
-        st.subheader(f"📈 {title_name}")
-        view_mode = st.radio(f"檢視模式 ({title_name})", ["月份推移分析", "全時間段數據彙總"], horizontal=True, key=f"mode_{dimension}")
+        st.subheader(f"📈 {title_name} 分析")
         
-        if view_mode == "月份推移分析":
-            df_group = data.groupby(['Month-Year', dimension])['Outbound Qty (Item)'].sum().reset_index()
-            fig = px.bar(df_group, x='Month-Year', y='Outbound Qty (Item)', color=dimension, barmode='group')
-            pivot = data.pivot_table(index=dimension, columns='Month-Year', values='Outbound Qty (Item)', aggfunc='sum', fill_value=0)
+        # 模式切換：月份趨勢 vs 全時間彙總
+        mode = st.radio(f"資料檢視模式 ({title_name})", ["月份推移", "全時間段彙總"], horizontal=True, key=f"mode_{dimension}")
+        chart_type = st.radio(f"選擇 {title_name} 圖表", ["推移圖", "柱狀圖", "餅圖"], horizontal=True, key=f"chart_{dimension}")
+        
+        if mode == "月份推移":
+            df_g = data.groupby(['Month-Year', dimension])['Outbound Qty (Item)'].sum().reset_index()
+            x_axis = 'Month-Year'
         else:
-            df_total = data.groupby(dimension)[['Outbound Qty (Item)']].sum().reset_index()
-            fig = px.pie(df_total, values='Outbound Qty (Item)', names=dimension, hole=0.3)
-            pivot = df_total.set_index(dimension)
+            df_g = data.groupby(dimension)[['Outbound Qty (Item)']].sum().reset_index()
+            x_axis = dimension
+
+        if chart_type == "推移圖":
+            fig = px.line(df_g, x=x_axis, y='Outbound Qty (Item)', color=dimension, markers=True, text='Outbound Qty (Item)')
+            fig.update_traces(textposition="top center")
+        elif chart_type == "柱狀圖":
+            fig = px.bar(df_g, x=x_axis, y='Outbound Qty (Item)', color=dimension, barmode='group', text='Outbound Qty (Item)')
+        else:
+            fig = px.pie(df_g, values='Outbound Qty (Item)', names=dimension)
             
         st.plotly_chart(fig, use_container_width=True)
+        pivot = data.pivot_table(index=dimension, columns='Month-Year' if mode=="月份推移" else None, values='Outbound Qty (Item)', aggfunc='sum', fill_value=0)
         st.dataframe(pivot.style.format("{:.0f}"), use_container_width=True)
 
-    # 執行所有維度
+    # 執行所有維度渲染
     for dim, name in [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]:
         render_analysis_section(f_df, dim, name)
 
+    # 匯出報告
     if st.sidebar.button("📊 導出完整報告"):
         prs = Presentation()
         slide = prs.slides.add_slide(prs.slide_layouts[6])
