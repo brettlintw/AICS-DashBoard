@@ -80,39 +80,49 @@ if uploaded_file:
     for dim, name in [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]:
         render_analysis_section(f_df, dim, name)
 
-# 📊 PPTX 導出邏輯區塊 (穩定版)
+# 📊 修正後的 PPTX 導出邏輯 (強化版)
     if st.sidebar.button("📊 導出 PPTX"):
         try:
-            # 建立簡報物件
             prs = Presentation()
             
-            # 建立第一頁：戰術摘要頁
+            # 1. 建立第一頁：戰術摘要頁
             slide = prs.slides.add_slide(prs.slide_layouts[5])
             title = slide.shapes.title
             title.text = "AICS 北美部署決策摘要"
             
-            # 將設備總覽統計數據寫入文字框
-            tf = slide.shapes.add_textbox(left=100000, top=100000, width=8000000, height=5000000).text_frame
-            tf.text = "設備總覽統計資料:\n\n" + summary.to_string()
+            # 2. 建立一個夠大的文字框並明確寫入
+            # 將 left, top, width, height 設定得更大，確保內容不溢出
+            left = 500000
+            top = 1000000
+            width = 8000000
+            height = 5000000
             
-            # 處理背景圖片 (若有的話)
+            txBox = slide.shapes.add_textbox(left, top, width, height)
+            tf = txBox.text_frame
+            tf.word_wrap = True # 開啟自動換行
+            
+            # 寫入數據
+            p = tf.add_paragraph()
+            p.text = "設備總覽統計資料:\n\n" + summary.to_string()
+            p.font.size = 127000 # 設定合適的字體大小 (約 10pt)
+            
+            # 3. 處理背景圖片
             if bg_image:
-                # 重新定位指標以防讀取失敗
-                bg_image.seek(0)
+                bg_image.seek(0) # 確保指標回到開頭
                 slide.shapes.add_picture(bg_image, 0, 0, width=prs.slide_width)
             
-            # 儲存至記憶體
+            # 4. 儲存與觸發下載
             buf = io.BytesIO()
             prs.save(buf)
+            buf.seek(0)
             
-            # 觸發下載
             st.sidebar.download_button(
                 label="下載 PPTX 檔案", 
-                data=buf.getvalue(), 
+                data=buf, 
                 file_name="Tactical_Report.pptx",
                 mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
             )
-            st.sidebar.success("導出準備就緒！")
+            st.sidebar.success("導出準備就緒！請按下載鈕。")
             
         except Exception as e:
             st.sidebar.error(f"導出過程發生錯誤: {e}")
