@@ -80,50 +80,43 @@ if uploaded_file:
     for dim, name in [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]:
         render_analysis_section(f_df, dim, name)
 
-# 📊 專業版 PPTX 導出邏輯
+# 📊 強化版 PPTX 導出邏輯
     if st.sidebar.button("📊 導出 PPTX"):
         try:
             prs = Presentation()
             
-            # --- 第 1 頁：設備總覽 ---
-            slide1 = prs.slides.add_slide(prs.slide_layouts[6]) # 使用空白版面
-            
-            # 標題
+            # 1. 第一頁：封面與統計摘要
+            slide1 = prs.slides.add_slide(prs.slide_layouts[6])
             title_box = slide1.shapes.add_textbox(left=500000, top=300000, width=8000000, height=1000000)
-            title_tf = title_box.text_frame
-            p_title = title_tf.add_paragraph()
-            p_title.text = "AICS 北美部署決策摘要"
-            p_title.font.bold = True
-            p_title.font.size = 400000 # 40pt
+            title_box.text_frame.text = "AICS 北美部署決策中心 - 戰情報告"
             
-            # 數據表格
             content_box = slide1.shapes.add_textbox(left=500000, top=1500000, width=8000000, height=5000000)
-            content_tf = content_box.text_frame
-            p_content = content_tf.add_paragraph()
-            p_content.text = "設備總覽統計資料:\n\n" + summary.to_string()
-            p_content.font.name = 'Courier New' # 使用等寬字體，對齊表格數字
-            p_content.font.size = 200000 # 20pt
+            content_box.text_frame.text = "設備總覽統計資料:\n\n" + summary.to_string()
             
-            # --- 第 2 頁以後：圖表頁 ---
-            # 如果您想把圖表放進去，請在這裡加入迴圈 (需確保 Kaleido 已安裝)
-            
-            # 處理背景圖
+            # 2. 自動遍歷圖表 (關鍵修正：直接重新計算並導出)
+            # 因為直接轉存圖表物件常出錯，我們改為生成簡報頁面
+            for dim, name in [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]:
+                slide = prs.slides.add_slide(prs.slide_layouts[6])
+                
+                # 添加標題
+                title = slide.shapes.add_textbox(left=500000, top=300000, width=8000000, height=1000000)
+                title.text_frame.text = f"分析維度: {name}"
+                
+                # 簡單說明文字
+                df_g = f_df.groupby(dim)[['Outbound Qty (Item)']].sum().reset_index()
+                data_text = slide.shapes.add_textbox(left=500000, top=1500000, width=8000000, height=5000000)
+                data_text.text_frame.text = df_g.to_string()
+
+            # 3. 處理背景並下載
             if bg_image:
                 bg_image.seek(0)
-                # 為每一頁添加背景（若只需第一頁，請放在 slide1 之後）
-                slide1.shapes.add_picture(bg_image, 0, 0, width=prs.slide_width, height=prs.slide_height)
-                slide1.shapes[0].z_order = -1 # 將圖片移至最底層
+                for s in prs.slides:
+                    s.shapes.add_picture(bg_image, 0, 0, width=prs.slide_width, height=prs.slide_height).z_order = -1
             
-            # 觸發下載
             buf = io.BytesIO()
             prs.save(buf)
-            st.sidebar.download_button(
-                label="下載正式 PPTX", 
-                data=buf.getvalue(), 
-                file_name="AICS_Tactical_Report.pptx",
-                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
-            )
-            st.sidebar.success("導出成功！")
+            st.sidebar.download_button("下載完整報告 PPTX", buf.getvalue(), "AICS_Full_Report.pptx")
+            st.sidebar.success("報告生成完畢！")
             
         except Exception as e:
-            st.sidebar.error(f"導出錯誤: {e}")
+            st.sidebar.error(f"導出異常: {e}")
