@@ -4,28 +4,32 @@ import plotly.express as px
 import plotly.graph_objects as go
 from pptx import Presentation
 import io
+import requests
 
 # 1. 頁面設定
-st.set_page_config(layout="wide", page_title="AICS 北美部署決策中心 V8.11 (雲端即時版)")
+st.set_page_config(layout="wide", page_title="AICS 北美部署決策中心 V8.11")
 st.title("🌐 AICS 北美部署決策中心 (雲端即時同步版)")
 
-# 座標映射表
-US_STATES_COORDS = {'AL': [32.8, -86.7], 'AK': [61.3, -152.4], 'AZ': [33.7, -111.4], 'AR': [34.9, -92.3], 'CA': [36.1, -119.6], 'CO': [39.0, -105.3], 'CT': [41.5, -72.7], 'DE': [39.3, -75.5], 'FL': [27.7, -81.6], 'GA': [33.0, -83.6], 'HI': [21.0, -157.4], 'ID': [44.2, -114.4], 'IL': [40.3, -88.9], 'IN': [39.8, -86.2], 'IA': [42.0, -93.2], 'KS': [38.5, -96.7], 'KY': [37.6, -84.6], 'LA': [31.1, -91.8], 'ME': [44.6, -69.3], 'MD': [39.0, -76.8], 'MA': [42.2, -71.5], 'MI': [43.3, -84.5], 'MN': [45.6, -93.9], 'MS': [32.7, -89.6], 'MO': [38.4, -92.2], 'MT': [46.9, -110.4], 'NE': [41.1, -98.2], 'NV': [38.3, -117.0], 'NH': [43.4, -71.5], 'NJ': [40.2, -74.5], 'NM': [34.8, -106.2], 'NY': [42.1, -74.9], 'NC': [35.6, -79.8], 'ND': [47.5, -99.7], 'OH': [40.3, -82.7], 'OK': [35.5, -96.9], 'OR': [44.5, -122.0], 'PA': [40.5, -77.2], 'RI': [41.6, -71.5], 'SC': [33.8, -80.9], 'SD': [44.2, -99.4], 'TN': [35.7, -86.6], 'TX': [31.0, -97.5], 'UT': [40.1, -111.8], 'VT': [44.0, -72.7], 'VA': [37.7, -78.1], 'WA': [47.4, -120.4], 'WV': [38.4, -80.9], 'WI': [44.2, -89.6], 'WY': [42.7, -107.3]}
-
 # --- 雲端數據讀取模組 ---
-SHEET_ID = "https://docs.google.com/spreadsheets/d/1AQNSCVWVoY9dFWD4NdCmXRWiRQt0--LE/edit?usp=sharing&ouid=101935051207867221848&rtpof=true&sd=true" # 修改此處
-@st.cache_data(ttl=600) 
+# 請將這裡的 SHEET_ID 換成您實際的 Google Sheets ID
+SHEET_ID = "https://docs.google.com/spreadsheets/d/1AQNSCVWVoY9dFWD4NdCmXRWiRQt0--LE/edit?usp=sharing&ouid=101935051207867221848&rtpof=true&sd=true" 
+
+@st.cache_data(ttl=600)
 def load_data():
     try:
-        url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
-        return pd.read_csv(url)
+        url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
+        # 【關鍵修復】：使用 requests 獲取內容並強制指定 utf-8 編碼，解決 ascii 錯誤
+        response = requests.get(url)
+        response.encoding = 'utf-8'
+        return pd.read_csv(io.StringIO(response.text))
     except Exception as e:
         st.error(f"無法讀取雲端資料庫: {e}")
         return None
 
+# 執行讀取
 df = load_data()
 if df is None:
-    st.warning("請在程式碼中設定正確的 SHEET_ID。")
+    st.error("請確認 SHEET_ID 是否正確，且工作表已設為公開檢視。")
     st.stop()
 
 # 數據清洗
@@ -34,7 +38,10 @@ df['Date(出庫)'] = pd.to_datetime(df['Date(出庫)'])
 f_df = df.copy()
 f_df['Month-Date'] = f_df['Date(出庫)'].dt.strftime('%Y-%m')
 
-# 核心分析功能
+# 座標映射表
+US_STATES_COORDS = {'AL': [32.8, -86.7], 'AK': [61.3, -152.4], 'AZ': [33.7, -111.4], 'AR': [34.9, -92.3], 'CA': [36.1, -119.6], 'CO': [39.0, -105.3], 'CT': [41.5, -72.7], 'DE': [39.3, -75.5], 'FL': [27.7, -81.6], 'GA': [33.0, -83.6], 'HI': [21.0, -157.4], 'ID': [44.2, -114.4], 'IL': [40.3, -88.9], 'IN': [39.8, -86.2], 'IA': [42.0, -93.2], 'KS': [38.5, -96.7], 'KY': [37.6, -84.6], 'LA': [31.1, -91.8], 'ME': [44.6, -69.3], 'MD': [39.0, -76.8], 'MA': [42.2, -71.5], 'MI': [43.3, -84.5], 'MN': [45.6, -93.9], 'MS': [32.7, -89.6], 'MO': [38.4, -92.2], 'MT': [46.9, -110.4], 'NE': [41.1, -98.2], 'NV': [38.3, -117.0], 'NH': [43.4, -71.5], 'NJ': [40.2, -74.5], 'NM': [34.8, -106.2], 'NY': [42.1, -74.9], 'NC': [35.6, -79.8], 'ND': [47.5, -99.7], 'OH': [40.3, -82.7], 'OK': [35.5, -96.9], 'OR': [44.5, -122.0], 'PA': [40.5, -77.2], 'RI': [41.6, -71.5], 'SC': [33.8, -80.9], 'SD': [44.2, -99.4], 'TN': [35.7, -86.6], 'TX': [31.0, -97.5], 'UT': [40.1, -111.8], 'VT': [44.0, -72.7], 'VA': [37.7, -78.1], 'WA': [47.4, -120.4], 'WV': [38.4, -80.9], 'WI': [44.2, -89.6], 'WY': [42.7, -107.3]}
+
+# 核心分析功能模組
 def render_analysis_section(data, dimension, title_name):
     st.markdown("---")
     st.subheader(f"📈 {title_name}")
@@ -63,5 +70,6 @@ def render_analysis_section(data, dimension, title_name):
             return ['color: blue; font-weight: bold;' if row.name == '合計' else ''] * len(row)
         st.dataframe(pivot.style.apply(highlight_row, axis=1), use_container_width=True)
 
+# 執行渲染
 for dim, name in [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]:
     render_analysis_section(f_df, dim, name)
