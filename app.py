@@ -80,29 +80,39 @@ if uploaded_file:
     for dim, name in [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]:
         render_analysis_section(f_df, dim, name)
 
-# 修正後的 PPTX 導出邏輯
-    if st.sidebar.button("📊 導出當前戰情室報表"):
-        # 1. 確保圖表已被渲染過
-        if len(st.session_state.charts_to_export) > 0:
+# 📊 PPTX 導出邏輯區塊 (穩定版)
+    if st.sidebar.button("📊 導出 PPTX"):
+        try:
+            # 建立簡報物件
             prs = Presentation()
-            for fig in st.session_state.charts_to_export:
-                slide = prs.slides.add_slide(prs.slide_layouts[6])
-                if bg_image: 
-                    # 確保背景圖片讀取正確
-                    slide.shapes.add_picture(io.BytesIO(bg_image.getvalue()), 0, 0, width=prs.slide_width)
-                
-                # 執行圖片渲染
-                img_bytes = pio.to_image(fig, format="png", width=800, height=600)
-                slide.shapes.add_picture(io.BytesIO(img_bytes), left=100000, top=100000, width=prs.slide_width-200000)
             
+            # 建立第一頁：戰術摘要頁
+            slide = prs.slides.add_slide(prs.slide_layouts[5])
+            title = slide.shapes.title
+            title.text = "AICS 北美部署決策摘要"
+            
+            # 將設備總覽統計數據寫入文字框
+            tf = slide.shapes.add_textbox(left=100000, top=100000, width=8000000, height=5000000).text_frame
+            tf.text = "設備總覽統計資料:\n\n" + summary.to_string()
+            
+            # 處理背景圖片 (若有的話)
+            if bg_image:
+                # 重新定位指標以防讀取失敗
+                bg_image.seek(0)
+                slide.shapes.add_picture(bg_image, 0, 0, width=prs.slide_width)
+            
+            # 儲存至記憶體
             buf = io.BytesIO()
             prs.save(buf)
-            # 2. 導出動作
+            
+            # 觸發下載
             st.sidebar.download_button(
                 label="下載 PPTX 檔案", 
                 data=buf.getvalue(), 
                 file_name="Tactical_Report.pptx",
                 mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
             )
-        else:
-            st.sidebar.warning("圖表尚未繪製完成，請稍候...")
+            st.sidebar.success("導出準備就緒！")
+            
+        except Exception as e:
+            st.sidebar.error(f"導出過程發生錯誤: {e}")
