@@ -5,17 +5,11 @@ import plotly.graph_objects as go
 from pptx import Presentation
 import io
 
-# 1. 頁面設定
-st.set_page_config(layout="wide", page_title="AICS 北美部署決策中心 V8.1")
+# 頁面設定
+st.set_page_config(layout="wide", page_title="AICS 北美部署決策中心 V8.2")
+st.markdown("""<style>.stDataFrame table td, .stDataFrame table th { white-space: nowrap !important; }</style>""", unsafe_allow_html=True)
 
-# 防溢出 CSS
-st.markdown("""
-    <style>
-    .stDataFrame table td, .stDataFrame table th { white-space: nowrap !important; }
-    </style>
-    """, unsafe_allow_html=True)
-
-st.title("🌐 AICS 北美部署決策中心 (V8.1 版)")
+st.title("🌐 AICS 北美部署決策中心 (V8.2 篩選聯動版)")
 
 # 數據導入
 st.sidebar.header("⚙️ 戰情控制台")
@@ -30,6 +24,7 @@ if uploaded_file:
     date_range = st.sidebar.date_input("日期區間篩選", [df['Date(出庫)'].min().date(), df['Date(出庫)'].max().date()])
     selected_machines = st.sidebar.multiselect("設備類型篩選", df['Machine Type'].unique(), default=df['Machine Type'].unique())
     
+    # 【關鍵聯動】：所有後續計算皆基於此 f_df
     f_df = df[(df['Date(出庫)'].dt.date >= date_range[0]) & (df['Date(出庫)'].dt.date <= date_range[1]) & (df['Machine Type'].isin(selected_machines))].copy()
     f_df['Month-Date'] = f_df['Date(出庫)'].dt.strftime('%Y-%m')
 
@@ -40,29 +35,19 @@ if uploaded_file:
     summary = pd.concat([total_row, summary], ignore_index=True)
     st.markdown(summary.style.map(lambda x: 'color: blue; font-weight: bold;' if x == '合計' else 'color: black').to_html(), unsafe_allow_html=True)
 
-    # 2. 北美地圖 (修正定位：固定北美視角，靠左居中)
+    # 2. 北美地圖
     st.subheader("🗺️ 北美設備戰術分佈")
     fig_map = go.Figure()
     US_STATES_COORDS = {'AL': [32.8, -86.7], 'AK': [61.3, -152.4], 'AZ': [33.7, -111.4], 'AR': [34.9, -92.3], 'CA': [36.1, -119.6], 'CO': [39.0, -105.3], 'CT': [41.5, -72.7], 'DE': [39.3, -75.5], 'FL': [27.7, -81.6], 'GA': [33.0, -83.6], 'HI': [21.0, -157.4], 'ID': [44.2, -114.4], 'IL': [40.3, -88.9], 'IN': [39.8, -86.2], 'IA': [42.0, -93.2], 'KS': [38.5, -96.7], 'KY': [37.6, -84.6], 'LA': [31.1, -91.8], 'ME': [44.6, -69.3], 'MD': [39.0, -76.8], 'MA': [42.2, -71.5], 'MI': [43.3, -84.5], 'MN': [45.6, -93.9], 'MS': [32.7, -89.6], 'MO': [38.4, -92.2], 'MT': [46.9, -110.4], 'NE': [41.1, -98.2], 'NV': [38.3, -117.0], 'NH': [43.4, -71.5], 'NJ': [40.2, -74.5], 'NM': [34.8, -106.2], 'NY': [42.1, -74.9], 'NC': [35.6, -79.8], 'ND': [47.5, -99.7], 'OH': [40.3, -82.7], 'OK': [35.5, -96.9], 'OR': [44.5, -122.0], 'PA': [40.5, -77.2], 'RI': [41.6, -71.5], 'SC': [33.8, -80.9], 'SD': [44.2, -99.4], 'TN': [35.7, -86.6], 'TX': [31.0, -97.5], 'UT': [40.1, -111.8], 'VT': [44.0, -72.7], 'VA': [37.7, -78.1], 'WA': [47.4, -120.4], 'WV': [38.4, -80.9], 'WI': [44.2, -89.6], 'WY': [42.7, -107.3]}
     
-    fig_map.add_trace(go.Scattergeo(lon=[US_STATES_COORDS[s][1] for s in US_STATES_COORDS], lat=[US_STATES_COORDS[s][0] for s in US_STATES_COORDS], text=list(US_STATES_COORDS.keys()), mode='text', textfont=dict(size=12, color='darkblue'), showlegend=False))
     for m in selected_machines:
         d = f_df[f_df['Machine Type'] == m].groupby('State Code')['Outbound Qty (Item)'].sum().reset_index()
         fig_map.add_trace(go.Scattergeo(locations=d['State Code'], locationmode="USA-states", marker=dict(size=d['Outbound Qty (Item)']*1.5), name=m))
     
-    # 【關鍵修正】：固定 geo 定位與視角
-    fig_map.update_layout(
-        geo=dict(
-            scope='north america',
-            projection_type='albers usa',
-            center=dict(lat=38, lon=-100), # 北美中心
-            projection_scale=1.5
-        ),
-        height=800, margin={"r":0,"t":0,"l":0,"b":0}, legend=dict(font=dict(size=20))
-    )
+    fig_map.update_layout(geo=dict(scope='north america', projection_type='albers usa', center=dict(lat=38, lon=-100), projection_scale=1.5), height=800, margin={"r":0,"t":0,"l":0,"b":0}, legend=dict(font=dict(size=20)))
     st.plotly_chart(fig_map, use_container_width=True)
 
-    # 3. 分析模組 (V8.0 邏輯)
+    # 3. 分析模組 (修正數據聯動)
     def render_analysis_section(data, dimension, title_name):
         st.markdown("---")
         st.subheader(f"📈 {title_name}")
@@ -70,7 +55,9 @@ if uploaded_file:
         chart_type = st.radio("圖表類型", ["推移圖", "柱狀圖", "餅圖"], horizontal=True, key=f"c_{dimension}")
         sort = st.selectbox("排序方式", ["預設", "由大至小", "由小至大"], key=f"s_{dimension}") if mode == "全時間段彙總" else "預設"
 
+        # 【核心修正】：這裡使用的 data 已經是 f_df，包含所有篩選條件
         df_g = data.groupby(['Month-Date', dimension] if mode=="月份推移" else dimension)[['Outbound Qty (Item)']].sum().reset_index()
+        
         if mode == "全時間段彙總" and sort != "預設":
             df_g = df_g.sort_values(by='Outbound Qty (Item)', ascending=(sort=="由小至大"))
 
@@ -81,6 +68,7 @@ if uploaded_file:
         st.plotly_chart(fig, use_container_width=True)
 
         if st.checkbox(f"顯示數據列表", key=f"ch_{dimension}"):
+            # 確保 pivot 使用篩選後的 data
             pivot = data.pivot_table(index=dimension, columns='Month-Date' if mode=="月份推移" else None, values='Outbound Qty (Item)', aggfunc='sum', fill_value=0)
             total = pivot.sum(axis=0); total.name = '合計'
             pivot = pd.concat([total.to_frame().T, pivot])
