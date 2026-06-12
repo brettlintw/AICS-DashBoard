@@ -9,7 +9,7 @@ import datetime
 
 # 1. 初始化頁面設定
 st.set_page_config(layout="wide", page_title="AICS 北美部署決策中心 V6.5")
-st.title("🌐 AICS 北美部署決策中心 (V6.5 排序優化旗艦版)")
+st.title("🌐 AICS 北美部署中心 (V6.5 正式版)")
 
 # CSS 樣式
 st.markdown("""
