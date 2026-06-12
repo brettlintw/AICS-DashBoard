@@ -80,19 +80,29 @@ if uploaded_file:
     for dim, name in [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]:
         render_analysis_section(f_df, dim, name)
 
-    # 修改後的 PPTX 導出邏輯
+# 修正後的 PPTX 導出邏輯
     if st.sidebar.button("📊 導出當前戰情室報表"):
-        prs = Presentation()
-        for fig in st.session_state.charts_to_export:
-            slide = prs.slides.add_slide(prs.slide_layouts[6])
-            if bg_image: slide.shapes.add_picture(io.BytesIO(bg_image.read()), 0, 0, width=prs.slide_width)
+        # 1. 確保圖表已被渲染過
+        if len(st.session_state.charts_to_export) > 0:
+            prs = Presentation()
+            for fig in st.session_state.charts_to_export:
+                slide = prs.slides.add_slide(prs.slide_layouts[6])
+                if bg_image: 
+                    # 確保背景圖片讀取正確
+                    slide.shapes.add_picture(io.BytesIO(bg_image.getvalue()), 0, 0, width=prs.slide_width)
+                
+                # 執行圖片渲染
+                img_bytes = pio.to_image(fig, format="png", width=800, height=600)
+                slide.shapes.add_picture(io.BytesIO(img_bytes), left=100000, top=100000, width=prs.slide_width-200000)
             
-            # 將 plotly 圖表轉為圖片寫入
-            img_bytes = pio.to_image(fig, format="png", width=800, height=600)
-            slide.shapes.add_picture(io.BytesIO(img_bytes), left=100000, top=100000, width=prs.slide_width-200000)
-            
-        buf = io.BytesIO()
-        prs.save(buf)
-        st.sidebar.download_button("下載 PPTX", buf.getvalue(), "Tactical_Report.pptx")
-else:
-    st.info("💡 請上傳數據檔案以啟動戰情室。")
+            buf = io.BytesIO()
+            prs.save(buf)
+            # 2. 導出動作
+            st.sidebar.download_button(
+                label="下載 PPTX 檔案", 
+                data=buf.getvalue(), 
+                file_name="Tactical_Report.pptx",
+                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            )
+        else:
+            st.sidebar.warning("圖表尚未繪製完成，請稍候...")
