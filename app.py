@@ -6,9 +6,17 @@ from pptx import Presentation
 import io
 
 # 1. 頁面設定
-st.set_page_config(layout="wide", page_title="AICS 北美部署決策中心 V6.8")
+st.set_page_config(layout="wide", page_title="AICS 北美部署決策中心 V6.9")
 
-# 州別座標映射 (確保所有代碼完整)
+# 樣式定義
+st.markdown("""
+    <style>
+    .legend-text { font-size: 28px !important; }
+    .blue-cell { color: #0000ff !important; font-weight: bold; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# 州別座標
 US_STATES_COORDS = {
     'AL': [32.8, -86.7], 'AK': [61.3, -152.4], 'AZ': [33.7, -111.4], 'AR': [34.9, -92.3], 'CA': [36.1, -119.6],
     'CO': [39.0, -105.3], 'CT': [41.5, -72.7], 'DE': [39.3, -75.5], 'FL': [27.7, -81.6], 'GA': [33.0, -83.6],
@@ -22,78 +30,72 @@ US_STATES_COORDS = {
     'VA': [37.7, -78.1], 'WA': [47.4, -120.4], 'WV': [38.4, -80.9], 'WI': [44.2, -89.6], 'WY': [42.7, -107.3]
 }
 
-st.title("🌐 AICS 北美部署決策中心 (V6.8 最終旗艦優化版)")
+st.title("🌐 AICS 北美部署決策中心 (V6.9 完整重構版)")
 
-# 數據導入
-uploaded_file = st.sidebar.file_uploader("上傳 Excel", type=["xlsx"])
+# 側邊欄控制台
+st.sidebar.header("⚙️ 戰情控制台")
+uploaded_file = st.sidebar.file_uploader("上傳數據", type=["xlsx"])
+bg_image = st.sidebar.file_uploader("上傳背景圖", type=["png", "jpg"])
+
 if uploaded_file:
     df = pd.read_excel(uploaded_file, sheet_name='Data Base')
     df.columns = df.columns.str.strip()
     df['Date(出庫)'] = pd.to_datetime(df['Date(出庫)'])
     
-    # 日期篩選
-    date_range = st.sidebar.date_input("日期區間", [df['Date(出庫)'].min().date(), df['Date(出庫)'].max().date()])
-    df = df[(df['Date(出庫)'].dt.date >= date_range[0]) & (df['Date(出庫)'].dt.date <= date_range[1])]
+    # 側邊欄篩選組件
+    date_range = st.sidebar.date_input("日期區間篩選", [df['Date(出庫)'].min().date(), df['Date(出庫)'].max().date()])
+    selected_machines = st.sidebar.multiselect("設備類型篩選", df['Machine Type'].unique(), default=df['Machine Type'].unique())
     
-    df['Month-Year'] = df['Date(出庫)'].dt.strftime('%Y-%m')
-    selected_machines = st.sidebar.multiselect("設備類型", df['Machine Type'].unique(), default=df['Machine Type'].unique())
-    f_df = df[df['Machine Type'].isin(selected_machines)].copy()
+    # 資料處理
+    f_df = df[(df['Date(出庫)'].dt.date >= date_range[0]) & (df['Date(出庫)'].dt.date <= date_range[1]) & (df['Machine Type'].isin(selected_machines))].copy()
+    f_df['Month-Year'] = f_df['Date(出庫)'].dt.strftime('%Y-%m')
 
-    # 1. 設備總覽統計表
+    # 主顯示區
     st.subheader("📊 設備總覽統計")
     summary = f_df.groupby('Machine Type')['Outbound Qty (Item)'].sum().reset_index()
     summary.loc[len(summary)] = ['合計', summary['Outbound Qty (Item)'].sum()]
     st.table(summary)
 
-    # 2. 北美地圖 (全州代碼標註)
-    st.subheader("🗺️ 北美設備戰術分佈 (含全州代碼)")
+    # 地圖
+    st.subheader("🗺️ 北美設備戰術分佈")
     fig_map = go.Figure()
-    # 畫出所有州代碼文字
-    fig_map.add_trace(go.Scattergeo(
-        lon=[US_STATES_COORDS[s][1] for s in US_STATES_COORDS],
-        lat=[US_STATES_COORDS[s][0] for s in US_STATES_COORDS],
-        text=list(US_STATES_COORDS.keys()), mode='text', textfont=dict(size=12, color='darkblue'), showlegend=False
-    ))
-    # 畫出數據圓點
+    fig_map.add_trace(go.Scattergeo(lon=[US_STATES_COORDS[s][1] for s in US_STATES_COORDS], lat=[US_STATES_COORDS[s][0] for s in US_STATES_COORDS], text=list(US_STATES_COORDS.keys()), mode='text', textfont=dict(size=12, color='darkblue'), showlegend=False))
     for m in selected_machines:
         d = f_df[f_df['Machine Type'] == m].groupby('State Code')['Outbound Qty (Item)'].sum().reset_index()
         fig_map.add_trace(go.Scattergeo(locations=d['State Code'], locationmode="USA-states", marker=dict(size=d['Outbound Qty (Item)']*1.5), name=m))
     fig_map.update_layout(geo=dict(scope='usa'), height=600, margin={"r":0,"t":0,"l":0,"b":0}, legend=dict(font=dict(size=20)))
     st.plotly_chart(fig_map, use_container_width=True)
 
-    # 3. 分析模組 (含排序功能)
+    # 模組化分析
     def render_analysis_section(data, dimension, title_name):
         st.markdown("---")
         st.subheader(f"📈 {title_name}")
-        mode = st.radio(f"檢視模式", ["月份推移", "全時間段彙總"], horizontal=True, key=f"mode_{dimension}")
-        chart_type = st.radio(f"選擇圖表", ["推移圖", "柱狀圖", "餅圖"], horizontal=True, key=f"chart_{dimension}")
+        mode = st.radio("檢視模式", ["月份推移", "全時間段彙總"], horizontal=True, key=f"m_{dimension}")
+        chart_type = st.radio("圖表類型", ["推移圖", "柱狀圖", "餅圖"], horizontal=True, key=f"c_{dimension}")
+        sort = st.selectbox("排序方式", ["預設", "由大至小", "由小至大"], key=f"s_{dimension}") if mode == "全時間段彙總" else "預設"
+
+        df_g = data.groupby(['Month-Year', dimension] if mode=="月份推移" else dimension)[['Outbound Qty (Item)']].sum().reset_index()
+        if sort == "由大至小": df_g = df_g.sort_values(by='Outbound Qty (Item)', ascending=False)
+        elif sort == "由小至大": df_g = df_g.sort_values(by='Outbound Qty (Item)', ascending=True)
+
+        if chart_type == "推移圖": fig = px.line(df_g, x='Month-Year' if mode=="月份推移" else dimension, y='Outbound Qty (Item)', color=dimension, markers=True, text='Outbound Qty (Item)')
+        elif chart_type == "柱狀圖": fig = px.bar(df_g, x='Month-Year' if mode=="月份推移" else dimension, y='Outbound Qty (Item)', color=dimension, text='Outbound Qty (Item)'); fig.update_layout(bargap=0.3)
+        else: fig = px.pie(df_g, values='Outbound Qty (Item)', names=dimension)
         
-        sort_order = st.selectbox("排序方式 (彙總模式生效)", ["預設", "由大至小", "由小至大"], key=f"sort_{dimension}") if mode == "全時間段彙總" else None
-
-        if mode == "月份推移":
-            df_g = data.groupby(['Month-Year', dimension])['Outbound Qty (Item)'].sum().reset_index()
-            pivot = data.pivot_table(index=dimension, columns='Month-Year', values='Outbound Qty (Item)', aggfunc='sum', fill_value=0, margins=True, margins_name='合計')
-        else:
-            df_g = data.groupby(dimension)[['Outbound Qty (Item)']].sum().reset_index()
-            if sort_order == "由大至小": df_g = df_g.sort_values(by='Outbound Qty (Item)', ascending=False)
-            elif sort_order == "由小至大": df_g = df_g.sort_values(by='Outbound Qty (Item)', ascending=True)
-            pivot = df_g.set_index(dimension)
-            pivot.loc['合計'] = pivot.sum()
-
-        if chart_type == "推移圖":
-            fig = px.line(df_g, x='Month-Year' if mode=="月份推移" else dimension, y='Outbound Qty (Item)', color=dimension, markers=True, text='Outbound Qty (Item)')
-        elif chart_type == "柱狀圖":
-            fig = px.bar(df_g, x='Month-Year' if mode=="月份推移" else dimension, y='Outbound Qty (Item)', color=dimension, text='Outbound Qty (Item)')
-            fig.update_layout(bargap=0.3)
-        else:
-            fig = px.pie(df_g, values='Outbound Qty (Item)', names=dimension)
-            
         st.plotly_chart(fig, use_container_width=True)
-        if st.checkbox(f"顯示 {title_name} 數據列表", key=f"check_{dimension}"):
+        if st.checkbox(f"顯示數據列表", key=f"ch_{dimension}"):
+            pivot = data.pivot_table(index=dimension, columns='Month-Year' if mode=="月份推移" else None, values='Outbound Qty (Item)', aggfunc='sum', fill_value=0, margins=True, margins_name='合計')
             st.dataframe(pivot.style.map(lambda x: 'color: blue; font-weight: bold;'), use_container_width=True)
 
     for dim, name in [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]:
         render_analysis_section(f_df, dim, name)
 
+    # 側邊欄匯出
+    if st.sidebar.button("📊 導出 PPTX 戰報"):
+        prs = Presentation()
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+        if bg_image: slide.shapes.add_picture(io.BytesIO(bg_image.read()), 0, 0, width=prs.slide_width)
+        buf = io.BytesIO(); prs.save(buf)
+        st.sidebar.download_button("下載 PPTX", buf.getvalue(), "Tactical_Report.pptx")
 else:
     st.info("💡 請上傳數據檔案以啟動戰情室。")
