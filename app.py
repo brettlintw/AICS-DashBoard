@@ -80,49 +80,50 @@ if uploaded_file:
     for dim, name in [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]:
         render_analysis_section(f_df, dim, name)
 
-# 📊 修正後的 PPTX 導出邏輯 (強化版)
+# 📊 專業版 PPTX 導出邏輯
     if st.sidebar.button("📊 導出 PPTX"):
         try:
             prs = Presentation()
             
-            # 1. 建立第一頁：戰術摘要頁
-            slide = prs.slides.add_slide(prs.slide_layouts[5])
-            title = slide.shapes.title
-            title.text = "AICS 北美部署決策摘要"
+            # --- 第 1 頁：設備總覽 ---
+            slide1 = prs.slides.add_slide(prs.slide_layouts[6]) # 使用空白版面
             
-            # 2. 建立一個夠大的文字框並明確寫入
-            # 將 left, top, width, height 設定得更大，確保內容不溢出
-            left = 500000
-            top = 1000000
-            width = 8000000
-            height = 5000000
+            # 標題
+            title_box = slide1.shapes.add_textbox(left=500000, top=300000, width=8000000, height=1000000)
+            title_tf = title_box.text_frame
+            p_title = title_tf.add_paragraph()
+            p_title.text = "AICS 北美部署決策摘要"
+            p_title.font.bold = True
+            p_title.font.size = 400000 # 40pt
             
-            txBox = slide.shapes.add_textbox(left, top, width, height)
-            tf = txBox.text_frame
-            tf.word_wrap = True # 開啟自動換行
+            # 數據表格
+            content_box = slide1.shapes.add_textbox(left=500000, top=1500000, width=8000000, height=5000000)
+            content_tf = content_box.text_frame
+            p_content = content_tf.add_paragraph()
+            p_content.text = "設備總覽統計資料:\n\n" + summary.to_string()
+            p_content.font.name = 'Courier New' # 使用等寬字體，對齊表格數字
+            p_content.font.size = 200000 # 20pt
             
-            # 寫入數據
-            p = tf.add_paragraph()
-            p.text = "設備總覽統計資料:\n\n" + summary.to_string()
-            p.font.size = 127000 # 設定合適的字體大小 (約 10pt)
+            # --- 第 2 頁以後：圖表頁 ---
+            # 如果您想把圖表放進去，請在這裡加入迴圈 (需確保 Kaleido 已安裝)
             
-            # 3. 處理背景圖片
+            # 處理背景圖
             if bg_image:
-                bg_image.seek(0) # 確保指標回到開頭
-                slide.shapes.add_picture(bg_image, 0, 0, width=prs.slide_width)
+                bg_image.seek(0)
+                # 為每一頁添加背景（若只需第一頁，請放在 slide1 之後）
+                slide1.shapes.add_picture(bg_image, 0, 0, width=prs.slide_width, height=prs.slide_height)
+                slide1.shapes[0].z_order = -1 # 將圖片移至最底層
             
-            # 4. 儲存與觸發下載
+            # 觸發下載
             buf = io.BytesIO()
             prs.save(buf)
-            buf.seek(0)
-            
             st.sidebar.download_button(
-                label="下載 PPTX 檔案", 
-                data=buf, 
-                file_name="Tactical_Report.pptx",
+                label="下載正式 PPTX", 
+                data=buf.getvalue(), 
+                file_name="AICS_Tactical_Report.pptx",
                 mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
             )
-            st.sidebar.success("導出準備就緒！請按下載鈕。")
+            st.sidebar.success("導出成功！")
             
         except Exception as e:
-            st.sidebar.error(f"導出過程發生錯誤: {e}")
+            st.sidebar.error(f"導出錯誤: {e}")
