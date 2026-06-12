@@ -8,14 +8,14 @@ import io
 # 1. 頁面設定
 st.set_page_config(layout="wide", page_title="AICS 北美部署決策中心 V7.8")
 
-# 防溢出 CSS
+# 防溢出與表格樣式 CSS
 st.markdown("""
     <style>
     .stDataFrame table td, .stDataFrame table th { white-space: nowrap !important; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🌐 AICS 北美部署決策中心 (V7.8 合計置頂版)")
+st.title("🌐 AICS 北美部署決策中心 (V7.8 穩定修正版)")
 
 # 數據導入
 st.sidebar.header("⚙️ 戰情控制台")
@@ -33,15 +33,12 @@ if uploaded_file:
     f_df = df[(df['Date(出庫)'].dt.date >= date_range[0]) & (df['Date(出庫)'].dt.date <= date_range[1]) & (df['Machine Type'].isin(selected_machines))].copy()
     f_df['Month-Date'] = f_df['Date(出庫)'].dt.strftime('%Y-%m')
 
-    # 1. 設備總覽統計 (合計置頂優化)
+    # 1. 設備總覽統計 (合計置頂)
     st.subheader("📊 設備總覽統計")
     summary = f_df.groupby('Machine Type')['Outbound Qty (Item)'].sum().reset_index()
     total_row = pd.DataFrame({'Machine Type': ['合計'], 'Outbound Qty (Item)': [summary['Outbound Qty (Item)'].sum()]})
     summary = pd.concat([total_row, summary], ignore_index=True)
-    
-    # 藍色字樣呈現
-    styled_summary = summary.style.map(lambda x: 'color: blue; font-weight: bold;' if x == '合計' else '', subset=['Machine Type'])
-    st.dataframe(styled_summary, use_container_width=True)
+    st.dataframe(summary.style.map(lambda x: 'color: blue; font-weight: bold;' if x == '合計' else 'color: black'), use_container_width=True)
 
     # 2. 北美地圖
     st.subheader("🗺️ 北美設備戰術分佈")
@@ -60,25 +57,24 @@ if uploaded_file:
         st.subheader(f"📈 {title_name}")
         mode = st.radio("檢視模式", ["月份推移", "全時間段彙總"], horizontal=True, key=f"m_{dimension}")
         chart_type = st.radio("圖表類型", ["推移圖", "柱狀圖", "餅圖"], horizontal=True, key=f"c_{dimension}")
-        sort = st.selectbox("排序方式", ["預設", "由大至小", "由小至大"], key=f"s_{dimension}")
+        sort = st.selectbox("排序方式", ["預設", "由大至小", "由小至大"], key=f"s_{dimension}") if mode == "全時間段彙總" else "預設"
 
-        x_col = 'Month-Date' if mode == "月份推移" else dimension
-        df_g = data.groupby([x_col, dimension] if mode=="月份推移" else dimension)[['Outbound Qty (Item)']].sum().reset_index()
+        df_g = data.groupby(['Month-Date', dimension] if mode=="月份推移" else dimension)[['Outbound Qty (Item)']].sum().reset_index()
         
-        if sort == "由大至小": df_g = df_g.sort_values(by='Outbound Qty (Item)', ascending=False)
-        elif sort == "由小至大": df_g = df_g.sort_values(by='Outbound Qty (Item)', ascending=True)
+        # 僅在彙總模式下執行排序
+        if mode == "全時間段彙總":
+            if sort == "由大至小": df_g = df_g.sort_values(by='Outbound Qty (Item)', ascending=False)
+            elif sort == "由小至大": df_g = df_g.sort_values(by='Outbound Qty (Item)', ascending=True)
 
-        if chart_type == "推移圖": fig = px.line(df_g, x=x_col, y='Outbound Qty (Item)', color=dimension, markers=True, text='Outbound Qty (Item)')
-        elif chart_type == "柱狀圖": fig = px.bar(df_g, x=x_col, y='Outbound Qty (Item)', color=dimension, text='Outbound Qty (Item)'); fig.update_layout(bargap=0.3)
+        if chart_type == "推移圖": fig = px.line(df_g, x='Month-Date' if mode=="月份推移" else dimension, y='Outbound Qty (Item)', color=dimension, markers=True, text='Outbound Qty (Item)')
+        elif chart_type == "柱狀圖": fig = px.bar(df_g, x='Month-Date' if mode=="月份推移" else dimension, y='Outbound Qty (Item)', color=dimension, text='Outbound Qty (Item)'); fig.update_layout(bargap=0.3)
         else: fig = px.pie(df_g, values='Outbound Qty (Item)', names=dimension)
         st.plotly_chart(fig, use_container_width=True)
 
         if st.checkbox(f"顯示數據列表", key=f"ch_{dimension}"):
-            pivot = data.pivot_table(index=dimension, columns='Month-Date' if mode=="月份推移" else None, values='Outbound Qty (Item)', aggfunc='sum', fill_value=0)
-            total = pivot.sum(axis=0)
-            total.name = '合計'
-            pivot = pd.concat([total.to_frame().T, pivot])
-            st.markdown(pivot.style.map(lambda x: 'color: blue; font-weight: bold;' if x == '合計' or pivot.index.get_loc(x.name)==0 else '').to_html(), unsafe_allow_html=True)
+            pivot = data.pivot_table(index=dimension, columns='Month-Date' if mode=="月份推移" else None, values='Outbound Qty (Item)', aggfunc='sum', fill_value=0, margins=True, margins_name='合計')
+            # 使用穩定的字串處理避免 KeyError
+            st.markdown(pivot.style.map(lambda x: 'color: blue; font-weight: bold;' if '合計' in str(x) else 'color: black').to_html(), unsafe_allow_html=True)
 
     for dim, name in [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]:
         render_analysis_section(f_df, dim, name)
