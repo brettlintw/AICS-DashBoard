@@ -80,43 +80,38 @@ if uploaded_file:
     for dim, name in [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]:
         render_analysis_section(f_df, dim, name)
 
-# 📊 強化版 PPTX 導出邏輯
-    if st.sidebar.button("📊 導出 PPTX"):
+# 📊 專業版 PPTX 導出邏輯：圖表 + 數據表格完美整合
+    if st.sidebar.button("📊 導出完整戰情室報表"):
         try:
             prs = Presentation()
             
-            # 1. 第一頁：封面與統計摘要
-            slide1 = prs.slides.add_slide(prs.slide_layouts[6])
-            title_box = slide1.shapes.add_textbox(left=500000, top=300000, width=8000000, height=1000000)
-            title_box.text_frame.text = "AICS 北美部署決策中心 - 戰情報告"
+            # 定義分析維度列表
+            dimensions = [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]
             
-            content_box = slide1.shapes.add_textbox(left=500000, top=1500000, width=8000000, height=5000000)
-            content_box.text_frame.text = "設備總覽統計資料:\n\n" + summary.to_string()
-            
-            # 2. 自動遍歷圖表 (關鍵修正：直接重新計算並導出)
-            # 因為直接轉存圖表物件常出錯，我們改為生成簡報頁面
-            for dim, name in [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]:
+            for dim, name in dimensions:
                 slide = prs.slides.add_slide(prs.slide_layouts[6])
                 
-                # 添加標題
-                title = slide.shapes.add_textbox(left=500000, top=300000, width=8000000, height=1000000)
+                # 1. 寫入標題
+                title = slide.shapes.add_textbox(left=500000, top=100000, width=8000000, height=800000)
                 title.text_frame.text = f"分析維度: {name}"
                 
-                # 簡單說明文字
+                # 2. 生成並寫入圖表 (使用 pio.to_image 轉換)
                 df_g = f_df.groupby(dim)[['Outbound Qty (Item)']].sum().reset_index()
-                data_text = slide.shapes.add_textbox(left=500000, top=1500000, width=8000000, height=5000000)
-                data_text.text_frame.text = df_g.to_string()
-
-            # 3. 處理背景並下載
-            if bg_image:
-                bg_image.seek(0)
-                for s in prs.slides:
-                    s.shapes.add_picture(bg_image, 0, 0, width=prs.slide_width, height=prs.slide_height).z_order = -1
-            
+                fig = px.bar(df_g, x=dim, y='Outbound Qty (Item)', title=f"{name} 統計圖")
+                
+                # 關鍵：將 Plotly 圖表轉為圖片數據流
+                img_bytes = pio.to_image(fig, format="png", width=800, height=400)
+                slide.shapes.add_picture(io.BytesIO(img_bytes), left=500000, top=1000000, width=8000000)
+                
+                # 3. 寫入數據表格
+                data_box = slide.shapes.add_textbox(left=500000, top=4000000, width=8000000, height=2000000)
+                data_box.text_frame.text = f"{name} 數據摘要:\n\n" + df_g.to_string(index=False)
+                
+            # 下載邏輯
             buf = io.BytesIO()
             prs.save(buf)
-            st.sidebar.download_button("下載完整報告 PPTX", buf.getvalue(), "AICS_Full_Report.pptx")
-            st.sidebar.success("報告生成完畢！")
+            st.sidebar.download_button("下載正式報表 PPTX", buf.getvalue(), "AICS_Full_Report.pptx")
+            st.sidebar.success("報表生成完畢！")
             
         except Exception as e:
-            st.sidebar.error(f"導出異常: {e}")
+            st.sidebar.error(f"導出失敗，請確認已安裝 Kaleido: {e}")
