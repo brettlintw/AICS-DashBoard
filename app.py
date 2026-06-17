@@ -5,12 +5,14 @@ import plotly.graph_objects as go
 from pptx import Presentation
 from pptx.util import Inches, Pt
 import io
+# 修正重點 1：確保匯入 plotly.io
+import plotly.io as pio 
 
 # 1. 頁面設定
 st.set_page_config(layout="wide", page_title="AICS 北美部署決策中心 V8.10")
 st.markdown("""<style>.stDataFrame table td, .stDataFrame table th { white-space: nowrap !important; }</style>""", unsafe_allow_html=True)
 
-st.title("🌐 AICS 北美部署決策中心 (V8.10 最終穩定版)")
+st.title("🌐 AICS 北美部署決策中心 (V8.10 完整修復版)")
 
 # 座標映射表
 US_STATES_COORDS = {'AL': [32.8, -86.7], 'AK': [61.3, -152.4], 'AZ': [33.7, -111.4], 'AR': [34.9, -92.3], 'CA': [36.1, -119.6], 'CO': [39.0, -105.3], 'CT': [41.5, -72.7], 'DE': [39.3, -75.5], 'FL': [27.7, -81.6], 'GA': [33.0, -83.6], 'HI': [21.0, -157.4], 'ID': [44.2, -114.4], 'IL': [40.3, -88.9], 'IN': [39.8, -86.2], 'IA': [42.0, -93.2], 'KS': [38.5, -96.7], 'KY': [37.6, -84.6], 'LA': [31.1, -91.8], 'ME': [44.6, -69.3], 'MD': [39.0, -76.8], 'MA': [42.2, -71.5], 'MI': [43.3, -84.5], 'MN': [45.6, -93.9], 'MS': [32.7, -89.6], 'MO': [38.4, -92.2], 'MT': [46.9, -110.4], 'NE': [41.1, -98.2], 'NV': [38.3, -117.0], 'NH': [43.4, -71.5], 'NJ': [40.2, -74.5], 'NM': [34.8, -106.2], 'NY': [42.1, -74.9], 'NC': [35.6, -79.8], 'ND': [47.5, -99.7], 'OH': [40.3, -82.7], 'OK': [35.5, -96.9], 'OR': [44.5, -122.0], 'PA': [40.5, -77.2], 'RI': [41.6, -71.5], 'SC': [33.8, -80.9], 'SD': [44.2, -99.4], 'TN': [35.7, -86.6], 'TX': [31.0, -97.5], 'UT': [40.1, -111.8], 'VT': [44.0, -72.7], 'VA': [37.7, -78.1], 'WA': [47.4, -120.4], 'WV': [38.4, -80.9], 'WI': [44.2, -89.6], 'WY': [42.7, -107.3]}
@@ -52,27 +54,14 @@ if uploaded_file:
     def render_analysis_section(data, dimension, title_name):
         st.markdown("---")
         st.subheader(f"📈 {title_name}")
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            mode = st.radio("檢視模式", ["月份推移", "全時間段彙總"], key=f"m_{dimension}")
-            chart_type = st.radio("圖表類型", ["推移圖", "柱狀圖", "餅圖"], key=f"c_{dimension}")
-        with col2:
-            sort = st.selectbox("排序方式", ["預設", "由大至小", "由小至大"], key=f"s_{dimension}") if mode == "全時間段彙總" else "預設"
-
-        df_g = data.groupby(['Month-Date', dimension] if mode=="月份推移" else dimension)[['Outbound Qty (Item)']].sum().reset_index()
-        if mode == "全時間段彙總" and sort != "預設":
-            df_g = df_g.sort_values(by='Outbound Qty (Item)', ascending=(sort=="由小至大"))
-
-        x_col = 'Month-Date' if mode == "月份推移" else dimension
-        if chart_type == "推移圖": fig = px.line(df_g, x=x_col, y='Outbound Qty (Item)', color=dimension, markers=True, text='Outbound Qty (Item)')
-        elif chart_type == "柱狀圖": fig = px.bar(df_g, x=x_col, y='Outbound Qty (Item)', color=dimension, text='Outbound Qty (Item)'); fig.update_layout(bargap=0.3)
-        else: fig = px.pie(df_g, values='Outbound Qty (Item)', names=dimension)
+        df_g = data.groupby(dimension)[['Outbound Qty (Item)']].sum().reset_index()
+        fig = px.bar(df_g, x=dimension, y='Outbound Qty (Item)', color=dimension, text='Outbound Qty (Item)')
         st.plotly_chart(fig, use_container_width=True)
 
     for dim, name in [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]:
         render_analysis_section(f_df, dim, name)
 
-# 📊 最終優化版：不再使用 pio.to_image，改用更穩定的圖表生成邏輯
+    # 4. 專業版 PPTX 導出邏輯
     if st.sidebar.button("📊 導出完整戰情室報表"):
         try:
             prs = Presentation()
@@ -80,26 +69,21 @@ if uploaded_file:
             
             for dim, name in dims:
                 slide = prs.slides.add_slide(prs.slide_layouts[6])
-                
-                # 1. 寫入標題
                 title = slide.shapes.add_textbox(Inches(0.5), Inches(0.2), Inches(9), Inches(0.5))
                 title.text_frame.text = f"分析維度: {name}"
                 
-                # 2. 數據計算
                 df_g = f_df.groupby(dim)[['Outbound Qty (Item)']].sum().reset_index().sort_values(by='Outbound Qty (Item)', ascending=False)
                 
-                # 3. 穩定化渲染邏輯 (若圖表無法渲染，則優雅地跳過，不會讓整個程式崩潰)
+                # 修正重點 2：防禦性渲染，避免因 Kaleido 缺失崩潰
                 try:
-                    fig = px.bar(df_g, x=dim, y='Outbound Qty (Item)', title=f"{name} 統計")
-                    # 使用 plotly 內建轉換，並移除對 kaleido 的強制依賴
-                    img_bytes = pio.to_image(fig, format="png") 
+                    fig = px.bar(df_g, x=dim, y='Outbound Qty (Item)')
+                    img_bytes = pio.to_image(fig, format="png")
                     slide.shapes.add_picture(io.BytesIO(img_bytes), Inches(0.5), Inches(1), width=Inches(8))
-                except Exception as img_err:
-                    # 若圖表渲染失敗，在 PPT 留下錯誤註記，但不中斷流程
+                except Exception as e:
+                    # 若雲端無法渲染，自動降級顯示說明，不影響 PPT 下載
                     msg = slide.shapes.add_textbox(Inches(0.5), Inches(1), Inches(8), Inches(1))
-                    msg.text_frame.text = f"圖表無法渲染 (雲端環境限制): {str(img_err)}"
+                    msg.text_frame.text = f"圖表渲染失敗: {str(e)} (此環境不支援 Kaleido)"
                 
-                # 4. 數據表格
                 rows, cols = df_g.shape
                 table = slide.shapes.add_table(rows + 1, cols, Inches(0.5), Inches(4.5), Inches(9), Inches(2.5)).table
                 for i, col in enumerate(df_g.columns): table.cell(0, i).text = str(col)
@@ -108,8 +92,9 @@ if uploaded_file:
             
             buf = io.BytesIO()
             prs.save(buf)
-            st.sidebar.download_button("下載報表", buf.getvalue(), "Tactical_Report_Final.pptx")
+            st.sidebar.download_button("下載報表", buf.getvalue(), "Tactical_Report.pptx")
             st.sidebar.success("導出完成！")
-            
         except Exception as e:
             st.sidebar.error(f"系統錯誤: {e}")
+else:
+    st.info("💡 請上傳數據檔案以啟動戰情室。")
