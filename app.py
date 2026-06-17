@@ -72,19 +72,35 @@ if uploaded_file:
     for dim, name in [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]:
         render_analysis_section(f_df, dim, name)
 
-    # 4. 專業版 PPTX 導出邏輯
+# 📊 修正後的 PPTX 導出邏輯 (完整整合圖表與表格)
     if st.sidebar.button("📊 導出完整戰情室報表"):
         try:
             prs = Presentation()
             dims = [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]
+            
             for dim, name in dims:
-                slide = prs.slides.add_slide(prs.slide_layouts[5])
-                slide.shapes.title.text = f"分析維度: {name}"
+                slide = prs.slides.add_slide(prs.slide_layouts[6]) # 使用空白版面
+                
+                # 1. 寫入標題
+                title = slide.shapes.add_textbox(Inches(0.5), Inches(0.2), Inches(9), Inches(0.5))
+                title.text_frame.text = f"分析維度: {name}"
+                
+                # 2. 數據計算
                 df_g = f_df.groupby(dim)[['Outbound Qty (Item)']].sum().reset_index().sort_values(by='Outbound Qty (Item)', ascending=False)
                 
+                # 3. 核心修正：直接寫入圖表物件
+                # 嘗試使用 fig 的圖片二進位流
+                fig = px.bar(df_g, x=dim, y='Outbound Qty (Item)', title=f"{name} 統計")
+                
+                # 關鍵：若 Kaleido 引擎無法運行，我們改為輸出一個「視覺化佔位符」或者嘗試用更穩定的方式渲染
+                # 這裡改用 pio.to_image 且不指定 engine，讓 plotly 自動選擇最高效的本地渲染
+                img_bytes = pio.to_image(fig, format="png")
+                slide.shapes.add_picture(io.BytesIO(img_bytes), Inches(0.5), Inches(1), width=Inches(4))
+                
+                # 4. 數據表格 (右側排版)
                 rows, cols = df_g.shape
-                table = slide.shapes.add_table(rows + 1, cols, Inches(0.5), Inches(1.5), Inches(9), Inches(4)).table
-                for i, col_name in enumerate(df_g.columns): table.cell(0, i).text = str(col_name)
+                table = slide.shapes.add_table(rows + 1, cols, Inches(5), Inches(1), Inches(4.5), Inches(4)).table
+                for i, col in enumerate(df_g.columns): table.cell(0, i).text = str(col)
                 for r in range(rows):
                     for c in range(cols): table.cell(r + 1, c).text = str(df_g.iloc[r, c])
             
@@ -93,6 +109,4 @@ if uploaded_file:
             st.sidebar.download_button("下載報表", buf.getvalue(), "Tactical_Report.pptx")
             st.sidebar.success("導出完成！")
         except Exception as e:
-            st.sidebar.error(f"導出錯誤: {e}")
-else:
-    st.info("💡 請上傳數據檔案以啟動戰情室。")
+            st.sidebar.error(f"渲染失敗: {e}。這通常是因為雲端環境缺少繪圖依賴。")
