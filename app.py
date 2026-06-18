@@ -39,6 +39,27 @@ if uploaded_file:
         state_sum = f_df.groupby('State Code')['Outbound Qty (Item)'].sum().reset_index()
         st.dataframe(state_sum, height=450, use_container_width=True)
 
+
+    # 1. 北美地圖 (強制靠左、藍色大字體州代碼、標記點放大)
+    st.subheader("🗺️ 北美設備戰術分佈")
+    fig_map = go.Figure()
+    
+    # 州代碼標示 (藍色、字體14)
+    fig_map.add_trace(go.Scattergeo(
+        lon=[US_STATES_COORDS[s][1] for s in US_STATES_COORDS], 
+        lat=[US_STATES_COORDS[s][0] for s in US_STATES_COORDS], 
+        text=list(US_STATES_COORDS.keys()), mode='text', 
+        textfont=dict(size=14, color='blue'), showlegend=False
+    ))
+    
+    # 設備氣泡 (將 marker.size 係數放大至 2.5)
+    for m in selected_machines:
+        m_df = f_df[f_df['Machine Type'] == m].groupby('State Code')['Outbound Qty (Item)'].sum().reset_index()
+        fig_map.add_trace(go.Scattergeo(
+            locations=m_df['State Code'], locationmode="USA-states", 
+            marker=dict(size=m_df['Outbound Qty (Item)']*2.5), name=m # 放大係數
+        ))
+
     # 2. 維度分析 (修復錯誤邏輯)
     dims = [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]
     for dim, name in dims:
