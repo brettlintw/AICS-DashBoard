@@ -10,40 +10,52 @@ import streamlit.components.v1 as components
 
 # 頁面設定：強制列印佈局與色彩優化
 st.set_page_config(layout="wide", page_title="AICS 北美決策中心")
+
+# [終極列印 CSS] 強制色彩飽和度與不透明度，徹底解決霧白
 st.markdown("""
     <style>
     @media print {
-        /* 強制隱藏所有 UI 控制元件 */
+        /* 1. 強制隱藏所有 UI 控制元件 */
         [data-testid="stSidebar"], .stButton, .stFileUploader, .stRadio, .stSelectbox, .stCheckbox { 
             display: none !important; 
         }
         
-        /* 強制文字變更為純黑，確保列印清晰度 */
+        /* 2. 強制文字變更為純黑，確保列印清晰度 */
         body, p, h1, h2, h3, .stDataFrame, .stMarkdown { 
             color: #000000 !important; 
             -webkit-text-fill-color: #000000 !important; 
         }
         
-        /* 強制圖表渲染：取消淡化效果，確保顏色飽和 */
+        /* 3. 強制圖表渲染：取消淡化，拉高對比與飽和度以抵銷列印時的色階流失 */
         .stPlotlyChart { 
             opacity: 1.0 !important; 
-            filter: none !important; 
+            filter: contrast(180%) brightness(100%) saturate(150%) !important; 
             page-break-inside: avoid !important; 
         }
         
-        /* 強制瀏覽器渲染色彩 */
+        /* 4. 強制瀏覽器使用原始顏色空間，不執行灰階轉換 */
         body { 
             -webkit-print-color-adjust: exact !important; 
             print-color-adjust: exact !important; 
+            background-color: #ffffff !important;
         }
         
-        /* 撐開滿版頁面 */
+        /* 5. 撐開滿版頁面 */
         [data-testid="block-container"] { max-width: 100% !important; padding: 10px !important; }
     }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🌐 AICS 北美部署決策中心 (V8.24 最終穩定版)")
+st.title("🌐 AICS 北美部署決策中心 (V8.28 最終色彩校正版)")
+
+# 核心顯示函數：強制 Plotly 圖表背景為不透明白色
+def display_chart(fig):
+    fig.update_layout(
+        paper_bgcolor='rgba(255,255,255,1)', 
+        plot_bgcolor='rgba(255,255,255,1)',
+        margin=dict(l=20, r=20, t=30, b=20)
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
 # 北美州代碼映射
 US_STATES_COORDS = {'AL': [32.8, -86.7], 'AK': [61.3, -152.4], 'AZ': [33.7, -111.4], 'AR': [34.9, -92.3], 'CA': [36.1, -119.6], 'CO': [39.0, -105.3], 'CT': [41.5, -72.7], 'DE': [39.3, -75.5], 'FL': [27.7, -81.6], 'GA': [33.0, -83.6], 'HI': [21.0, -157.4], 'ID': [44.2, -114.4], 'IL': [40.3, -88.9], 'IN': [39.8, -86.2], 'IA': [42.0, -93.2], 'KS': [38.5, -96.7], 'KY': [37.6, -84.6], 'LA': [31.1, -91.8], 'ME': [44.6, -69.3], 'MD': [39.0, -76.8], 'MA': [42.2, -71.5], 'MI': [43.3, -84.5], 'MN': [45.6, -93.9], 'MS': [32.7, -89.6], 'MO': [38.4, -92.2], 'MT': [46.9, -110.4], 'NE': [41.1, -98.2], 'NV': [38.3, -117.0], 'NH': [43.4, -71.5], 'NJ': [40.2, -74.5], 'NM': [34.8, -106.2], 'NY': [42.1, -74.9], 'NC': [35.6, -79.8], 'ND': [47.5, -99.7], 'OH': [40.3, -82.7], 'OK': [35.5, -96.9], 'OR': [44.5, -122.0], 'PA': [40.5, -77.2], 'RI': [41.6, -71.5], 'SC': [33.8, -80.9], 'SD': [44.2, -99.4], 'TN': [35.7, -86.6], 'TX': [31.0, -97.5], 'UT': [40.1, -111.8], 'VT': [44.0, -72.7], 'VA': [37.7, -78.1], 'WA': [47.4, -120.4], 'WV': [38.4, -80.9], 'WI': [44.2, -89.6], 'WY': [42.7, -107.3]}
@@ -79,7 +91,7 @@ if uploaded_file:
         m_df = f_df[f_df['Machine Type'] == m].groupby('State Code')['Outbound Qty (Item)'].sum().reset_index()
         fig_map.add_trace(go.Scattergeo(locations=m_df['State Code'], locationmode="USA-states", marker=dict(size=m_df['Outbound Qty (Item)']*2.5), name=m))
     fig_map.update_layout(geo=dict(scope='usa', fitbounds="locations"), height=600, margin={"l": 0, "r": 0, "t": 0, "b": 0})
-    st.plotly_chart(fig_map, use_container_width=True)
+    display_chart(fig_map)
 
     # 維度分析
     for dim, name in dims:
@@ -94,7 +106,7 @@ if uploaded_file:
             if chart_type == "柱狀圖": fig = px.bar(df_g, x=dim if mode=="全時間段" else "Month-Date", y='Outbound Qty (Item)', color=dim)
             elif chart_type == "推移圖": fig = px.line(df_g, x="Month-Date", y='Outbound Qty (Item)', color=dim, markers=True)
             else: fig = px.pie(df_g, values='Outbound Qty (Item)', names=dim)
-            st.plotly_chart(fig, use_container_width=True)
+            display_chart(fig)
             if st.checkbox("顯示表格", key=f"t_{dim}"): st.dataframe(df_g, use_container_width=True)
 
     # PPTX 匯出
