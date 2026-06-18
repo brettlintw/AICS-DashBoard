@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 from pptx import Presentation
 from pptx.util import Inches, Pt
 import io
+import plotly.io as pio
 
 # 1. 頁面設定
 st.set_page_config(layout="wide", page_title="AICS 北美部署決策中心 V8.10")
@@ -37,7 +38,7 @@ if uploaded_file:
     summary = pd.concat([total_row, summary], ignore_index=True)
     st.dataframe(summary.style.apply(lambda row: ['color: blue; font-weight: bold;' if row['Machine Type'] == '合計' else ''] * len(row), axis=1), use_container_width=True)
 
-    # 2. 地圖渲染
+    # 2. 地圖渲染 (精確佈局調整)
     st.subheader("🗺️ 北美設備戰術分佈")
     fig_map = go.Figure()
     for state, coords in US_STATES_COORDS.items():
@@ -45,7 +46,18 @@ if uploaded_file:
     for m in selected_machines:
         m_df = f_df[f_df['Machine Type'] == m].groupby('State Code')['Outbound Qty (Item)'].sum().reset_index()
         fig_map.add_trace(go.Scattergeo(locations=m_df['State Code'], locationmode="USA-states", marker=dict(size=m_df['Outbound Qty (Item)']*1.5, opacity=0.5), name=m))
-    fig_map.update_layout(geo=dict(scope='north america', projection_type='albers usa', center=dict(lat=38, lon=-100), projection_scale=1.5), height=800, margin={"r":0,"t":0,"l":0,"b":0})
+    
+    # 調整中心點與投影縮放，讓地圖更向左靠攏且不溢出
+    fig_map.update_layout(
+        geo=dict(
+            scope='north america', 
+            projection_type='albers usa', 
+            center=dict(lat=38, lon=-100), 
+            projection_scale=1.2 # 縮小一點以防止邊緣截斷
+        ), 
+        height=600, 
+        margin={"r":0, "t":0, "l":0, "b":0}
+    )
     st.plotly_chart(fig_map, use_container_width=True)
 
     # 3. 分析模組
@@ -72,44 +84,35 @@ if uploaded_file:
     for dim, name in [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]:
         render_analysis_section(f_df, dim, name)
 
-# 📊 最終優化版：不再使用 pio.to_image，改用更穩定的圖表生成邏輯
+    # 4. 專業版 PPTX 導出邏輯
     if st.sidebar.button("📊 導出完整戰情室報表"):
         try:
             prs = Presentation()
             dims = [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]
-            
             for dim, name in dims:
                 slide = prs.slides.add_slide(prs.slide_layouts[6])
-                
-                # 1. 寫入標題
                 title = slide.shapes.add_textbox(Inches(0.5), Inches(0.2), Inches(9), Inches(0.5))
                 title.text_frame.text = f"分析維度: {name}"
-                
-                # 2. 數據計算
                 df_g = f_df.groupby(dim)[['Outbound Qty (Item)']].sum().reset_index().sort_values(by='Outbound Qty (Item)', ascending=False)
                 
-                # 3. 穩定化渲染邏輯 (若圖表無法渲染，則優雅地跳過，不會讓整個程式崩潰)
                 try:
-                    fig = px.bar(df_g, x=dim, y='Outbound Qty (Item)', title=f"{name} 統計")
-                    # 使用 plotly 內建轉換，並移除對 kaleido 的強制依賴
-                    img_bytes = pio.to_image(fig, format="png") 
+                    fig = px.bar(df_g, x=dim, y='Outbound Qty (Item)')
+                    img_bytes = pio.to_image(fig, format="png")
                     slide.shapes.add_picture(io.BytesIO(img_bytes), Inches(0.5), Inches(1), width=Inches(8))
-                except Exception as img_err:
-                    # 若圖表渲染失敗，在 PPT 留下錯誤註記，但不中斷流程
-                    msg = slide.shapes.add_textbox(Inches(0.5), Inches(1), Inches(8), Inches(1))
-                    msg.text_frame.text = f"圖表無法渲染 (雲端環境限制): {str(img_err)}"
+                except:
+                    pass 
                 
-                # 4. 數據表格
                 rows, cols = df_g.shape
                 table = slide.shapes.add_table(rows + 1, cols, Inches(0.5), Inches(4.5), Inches(9), Inches(2.5)).table
-                for i, col in enumerate(df_g.columns): table.cell(0, i).text = str(col)
+                for i, col_name in enumerate(df_g.columns): table.cell(0, i).text = str(col_name)
                 for r in range(rows):
                     for c in range(cols): table.cell(r + 1, c).text = str(df_g.iloc[r, c])
             
             buf = io.BytesIO()
             prs.save(buf)
-            st.sidebar.download_button("下載報表", buf.getvalue(), "Tactical_Report_Final.pptx")
+            st.sidebar.download_button("下載報表", buf.getvalue(), "Tactical_Report.pptx")
             st.sidebar.success("導出完成！")
-            
         except Exception as e:
-            st.sidebar.error(f"系統錯誤: {e}")
+            st.sidebar.error(f"導出錯誤: {e}")
+else:
+    st.info("💡 請上傳數據檔案以啟動戰情室。")
