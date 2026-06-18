@@ -8,34 +8,40 @@ import io
 import plotly.io as pio
 import streamlit.components.v1 as components
 
-# 頁面設定：強制列印佈局與隱藏不需要的元件
+# 頁面設定：針對 PDF 匯出進行最終視覺優化
 st.set_page_config(layout="wide", page_title="AICS 北美決策中心")
-
 st.markdown("""
     <style>
     @media print {
-        /* 強制隱藏側邊欄、按鈕與所有 UI 控制項 */
-        [data-testid="stSidebar"], .stButton, .stFileUploader, .stRadio, .stSelectbox, .stCheckbox { 
+        /* 強制隱藏所有 UI 控制元件 */
+        .stButton, .stSidebar, .stFileUploader, .stRadio, .stSelectbox, .stCheckbox { 
             display: none !important; 
         }
         
-        /* 將主內容區域撐開到滿版 */
-        [data-testid="block-container"] { 
-            max-width: 100% !important; 
-            padding: 0 !important; 
+        /* 強制文字變更為純黑，確保列印清晰度 */
+        body, p, h1, h2, h3, .stDataFrame, .stMarkdown { 
+            color: #000000 !important; 
+            -webkit-text-fill-color: #000000 !important; 
         }
         
-        /* 強制圖表渲染顏色與背景 */
-        .stPlotlyChart { page-break-inside: avoid !important; }
+        /* 強制圖表不被淡化並保留顏色與背景 */
+        .stPlotlyChart { 
+            opacity: 1.0 !important; 
+            filter: none !important; 
+            page-break-inside: avoid !important; 
+        }
         body { 
             -webkit-print-color-adjust: exact !important; 
             print-color-adjust: exact !important; 
         }
+        
+        /* 撐開滿版頁面 */
+        [data-testid="block-container"] { max-width: 100% !important; padding: 10px !important; }
     }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🌐 AICS 北美部署決策中心 (V8.21 專業列印版)")
+st.title("🌐 AICS 北美部署決策中心 (V8.22 最終高清列印版)")
 
 # 北美州代碼與座標映射表
 US_STATES_COORDS = {'AL': [32.8, -86.7], 'AK': [61.3, -152.4], 'AZ': [33.7, -111.4], 'AR': [34.9, -92.3], 'CA': [36.1, -119.6], 'CO': [39.0, -105.3], 'CT': [41.5, -72.7], 'DE': [39.3, -75.5], 'FL': [27.7, -81.6], 'GA': [33.0, -83.6], 'HI': [21.0, -157.4], 'ID': [44.2, -114.4], 'IL': [40.3, -88.9], 'IN': [39.8, -86.2], 'IA': [42.0, -93.2], 'KS': [38.5, -96.7], 'KY': [37.6, -84.6], 'LA': [31.1, -91.8], 'ME': [44.6, -69.3], 'MD': [39.0, -76.8], 'MA': [42.2, -71.5], 'MI': [43.3, -84.5], 'MN': [45.6, -93.9], 'MS': [32.7, -89.6], 'MO': [38.4, -92.2], 'MT': [46.9, -110.4], 'NE': [41.1, -98.2], 'NV': [38.3, -117.0], 'NH': [43.4, -71.5], 'NJ': [40.2, -74.5], 'NM': [34.8, -106.2], 'NY': [42.1, -74.9], 'NC': [35.6, -79.8], 'ND': [47.5, -99.7], 'OH': [40.3, -82.7], 'OK': [35.5, -96.9], 'OR': [44.5, -122.0], 'PA': [40.5, -77.2], 'RI': [41.6, -71.5], 'SC': [33.8, -80.9], 'SD': [44.2, -99.4], 'TN': [35.7, -86.6], 'TX': [31.0, -97.5], 'UT': [40.1, -111.8], 'VT': [44.0, -72.7], 'VA': [37.7, -78.1], 'WA': [47.4, -120.4], 'WV': [38.4, -80.9], 'WI': [44.2, -89.6], 'WY': [42.7, -107.3]}
@@ -47,7 +53,7 @@ if uploaded_file:
     df['Date(出庫)'] = pd.to_datetime(df['Date(出庫)'])
     
     st.sidebar.markdown("### 匯出報告")
-    if st.sidebar.button("🖨️ 匯出 PDF 報告"):
+    if st.sidebar.button("🖨️ 匯出 PDF 報告 (點擊後請勾選「背景圖形」)"):
         components.html("<script>window.parent.window.print();</script>", height=0)
     
     date_range = st.sidebar.date_input("日期篩選", [df['Date(出庫)'].min().date(), df['Date(出庫)'].max().date()])
@@ -92,12 +98,12 @@ if uploaded_file:
             st.plotly_chart(fig, use_container_width=True)
             if show_table: st.dataframe(df_g, use_container_width=True)
 
-    # 匯出區塊 (PPTX)
+    # PPTX 導出 (保持優雅降級)
     if st.sidebar.button("📊 導出完整戰情室報表"):
         prs = Presentation()
         for dim, name in dims:
             slide = prs.slides.add_slide(prs.slide_layouts[6])
-            slide.shapes.add_textbox(Inches(0.5), Inches(0.2), Inches(9), Inches(0.5)).text_frame.text = f"分析維度: {name}"
+            slide.shapes.add_textbox(Inches(0.5), Inches(0.2), Inches(9), Inches(0.5)).text_frame.text = f"Analysis: {name}"
             df_g = f_df.groupby(dim)[['Outbound Qty (Item)']].sum().reset_index().sort_values(by='Outbound Qty (Item)', ascending=False)
             try:
                 fig = px.bar(df_g, x=dim, y='Outbound Qty (Item)')
@@ -108,4 +114,4 @@ if uploaded_file:
             for i, col in enumerate(df_g.columns): table.cell(0, i).text = str(col)
             for r in range(len(df_g)):
                 for c in range(len(df_g.columns)): table.cell(r+1, c).text = str(df_g.iloc[r, c])
-        buf = io.BytesIO(); prs.save(buf); st.sidebar.download_button("確認下載戰情室 PPTX", buf.getvalue(), "Tactical_Report.pptx")
+        buf = io.BytesIO(); prs.save(buf); st.sidebar.download_button("確認下載 PPTX", buf.getvalue(), "Tactical_Report.pptx")
