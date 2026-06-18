@@ -9,7 +9,8 @@ import plotly.io as pio
 
 # 1. 頁面設定
 st.set_page_config(layout="wide", page_title="AICS 北美部署決策中心 V8.10")
-st.markdown("""<style>.stDataFrame table td, .stDataFrame table th { white-space: nowrap !important; }</style>""", unsafe_但在_html=True)
+# 修正重點：參數名稱已修正為 unsafe_allow_html=True
+st.markdown("""<style>.stDataFrame table td, .stDataFrame table th { white-space: nowrap !important; }</style>""", unsafe_allow_html=True)
 
 st.title("🌐 AICS 北美部署決策中心 (V8.10 最終調整版)")
 
@@ -32,7 +33,7 @@ if uploaded_file:
     st.subheader("📊 設備總覽統計")
     st.dataframe(f_df.groupby('Machine Type')['Outbound Qty (Item)'].sum().reset_index(), use_container_width=True)
 
-    # 2. 地圖渲染 (修正版)
+    # 2. 地圖渲染
     st.subheader("🗺️ 北美設備戰術分佈")
     fig_map = go.Figure()
     for state, coords in US_STATES_COORDS.items():
@@ -56,11 +57,12 @@ if uploaded_file:
         with c2:
             st.dataframe(df_g, use_container_width=True)
 
-    # 4. PPTX 導出 (維持專業排版)
+    # 4. PPTX 導出
     if st.sidebar.button("📊 導出完整戰情室報表"):
         try:
             prs = Presentation()
-            for dim, name in [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]:
+            dims = [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]
+            for dim, name in dims:
                 slide = prs.slides.add_slide(prs.slide_layouts[6])
                 slide.shapes.add_textbox(Inches(0.5), Inches(0.2), Inches(9), Inches(0.5)).text_frame.text = f"分析維度: {name}"
                 df_g = f_df.groupby(dim)[['Outbound Qty (Item)']].sum().reset_index().sort_values(by='Outbound Qty (Item)', ascending=False)
