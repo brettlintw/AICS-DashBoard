@@ -7,9 +7,23 @@ from pptx.util import Inches
 import io
 import plotly.io as pio
 
-# 頁面設定
+# 頁面設定：加入列印優化 CSS，強制保留顏色並優化排版
 st.set_page_config(layout="wide", page_title="AICS 北美決策中心")
-st.title("🌐 AICS 北美部署決策中心 (V8.17 版)")
+st.markdown("""
+    <style>
+    @media print {
+        .stButton, .stSidebar, .stFileUploader { display: none !important; }
+        .stPlotlyChart { page-break-inside: avoid; }
+        /* 強制瀏覽器渲染顏色與背景 */
+        body { 
+            -webkit-print-color-adjust: exact !important; 
+            print-color-adjust: exact !important; 
+        }
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+st.title("🌐 AICS 北美部署決策中心 (V8.18 最終彩色列印版)")
 
 # 北美州代碼與座標映射表
 US_STATES_COORDS = {'AL': [32.8, -86.7], 'AK': [61.3, -152.4], 'AZ': [33.7, -111.4], 'AR': [34.9, -92.3], 'CA': [36.1, -119.6], 'CO': [39.0, -105.3], 'CT': [41.5, -72.7], 'DE': [39.3, -75.5], 'FL': [27.7, -81.6], 'GA': [33.0, -83.6], 'HI': [21.0, -157.4], 'ID': [44.2, -114.4], 'IL': [40.3, -88.9], 'IN': [39.8, -86.2], 'IA': [42.0, -93.2], 'KS': [38.5, -96.7], 'KY': [37.6, -84.6], 'LA': [31.1, -91.8], 'ME': [44.6, -69.3], 'MD': [39.0, -76.8], 'MA': [42.2, -71.5], 'MI': [43.3, -84.5], 'MN': [45.6, -93.9], 'MS': [32.7, -89.6], 'MO': [38.4, -92.2], 'MT': [46.9, -110.4], 'NE': [41.1, -98.2], 'NV': [38.3, -117.0], 'NH': [43.4, -71.5], 'NJ': [40.2, -74.5], 'NM': [34.8, -106.2], 'NY': [42.1, -74.9], 'NC': [35.6, -79.8], 'ND': [47.5, -99.7], 'OH': [40.3, -82.7], 'OK': [35.5, -96.9], 'OR': [44.5, -122.0], 'PA': [40.5, -77.2], 'RI': [41.6, -71.5], 'SC': [33.8, -80.9], 'SD': [44.2, -99.4], 'TN': [35.7, -86.6], 'TX': [31.0, -97.5], 'UT': [40.1, -111.8], 'VT': [44.0, -72.7], 'VA': [37.7, -78.1], 'WA': [47.4, -120.4], 'WV': [38.4, -80.9], 'WI': [44.2, -89.6], 'WY': [42.7, -107.3]}
@@ -20,7 +34,13 @@ if uploaded_file:
     df.columns = df.columns.str.strip()
     df['Date(出庫)'] = pd.to_datetime(df['Date(出庫)'])
     
-    st.sidebar.markdown("### 全域篩選")
+    st.sidebar.markdown("### 匯出功能")
+    st.sidebar.markdown("""
+        <button onclick="window.print()" style="width: 100%; padding: 15px; background-color: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; font-weight: bold;">
+            🖨️ 匯出 PDF 報告 (點擊後請勾選背景圖形)
+        </button>
+    """, unsafe_allow_html=True)
+    
     date_range = st.sidebar.date_input("日期篩選", [df['Date(出庫)'].min().date(), df['Date(出庫)'].max().date()])
     
     filters = {}
@@ -44,7 +64,7 @@ if uploaded_file:
     fig_map.update_layout(geo=dict(scope='usa', fitbounds="locations"), height=800, margin={"l": 0, "r": 150, "t": 0, "b": 0}, legend=dict(x=1.0, y=0.5))
     st.plotly_chart(fig_map, use_container_width=True)
 
-    # 各維度分析
+    # 分析維度
     for dim, name in dims:
         st.markdown("---")
         st.subheader(f"📈 {name}")
@@ -63,16 +83,20 @@ if uploaded_file:
             st.plotly_chart(fig, use_container_width=True)
             if show_table: st.dataframe(df_g, use_container_width=True)
 
-    # 序列化 HTML 匯出控制
-    st.sidebar.markdown("### 匯出報告")
-    if st.sidebar.button("📄 生成完整分析報告 (HTML)"):
-        full_html = "<html><body><h1>AICS Tactical Report</h1>"
-        full_html += "<h2>北美設備戰術分佈</h2>" + pio.to_html(fig_map, full_html=False, include_plotlyjs='cdn')
+    # PPTX 導出 (保留)
+    if st.sidebar.button("📊 導出 PPTX 簡報"):
+        prs = Presentation()
         for dim, name in dims:
-            full_html += f"<h2>分析維度: {name}</h2>"
-            df_g = f_df.groupby(dim)[['Outbound Qty (Item)']].sum().reset_index()
-            full_html += df_g.to_html()
-            fig = px.bar(df_g, x=dim, y='Outbound Qty (Item)')
-            full_html += pio.to_html(fig, full_html=False, include_plotlyjs='cdn')
-        full_html += "</body></html>"
-        st.sidebar.download_button("下載 HTML 報告", full_html, "Full_Report.html", "text/html")
+            slide = prs.slides.add_slide(prs.slide_layouts[6])
+            slide.shapes.add_textbox(Inches(0.5), Inches(0.2), Inches(9), Inches(0.5)).text_frame.text = f"Analysis: {name}"
+            df_g = f_df.groupby(dim)[['Outbound Qty (Item)']].sum().reset_index().sort_values(by='Outbound Qty (Item)', ascending=False)
+            try:
+                fig = px.bar(df_g, x=dim, y='Outbound Qty (Item)')
+                img_bytes = pio.to_image(fig, format="png", width=1200, height=450)
+                slide.shapes.add_picture(io.BytesIO(img_bytes), Inches(0.5), Inches(1), width=Inches(9))
+            except: pass
+            table = slide.shapes.add_table(len(df_g)+1, len(df_g.columns), Inches(0.5), Inches(5), Inches(9), Inches(2)).table
+            for i, col in enumerate(df_g.columns): table.cell(0, i).text = str(col)
+            for r in range(len(df_g)):
+                for c in range(len(df_g.columns)): table.cell(r+1, c).text = str(df_g.iloc[r, c])
+        buf = io.BytesIO(); prs.save(buf); st.sidebar.download_button("下載 PPTX", buf.getvalue(), "Report.pptx")
