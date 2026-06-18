@@ -9,7 +9,7 @@ import plotly.io as pio
 
 # 頁面設定
 st.set_page_config(layout="wide", page_title="AICS 北美決策中心")
-st.title("🌐 AICS 北美部署決策中心 (V8.10 版)")
+st.title("🌐 AICS 北美部署決策中心 (V8.11 設備統計版)")
 
 # 北美州代碼與座標映射表
 US_STATES_COORDS = {'AL': [32.8, -86.7], 'AK': [61.3, -152.4], 'AZ': [33.7, -111.4], 'AR': [34.9, -92.3], 'CA': [36.1, -119.6], 'CO': [39.0, -105.3], 'CT': [41.5, -72.7], 'DE': [39.3, -75.5], 'FL': [27.7, -81.6], 'GA': [33.0, -83.6], 'HI': [21.0, -157.4], 'ID': [44.2, -114.4], 'IL': [40.3, -88.9], 'IN': [39.8, -86.2], 'IA': [42.0, -93.2], 'KS': [38.5, -96.7], 'KY': [37.6, -84.6], 'LA': [31.1, -91.8], 'ME': [44.6, -69.3], 'MD': [39.0, -76.8], 'MA': [42.2, -71.5], 'MI': [43.3, -84.5], 'MN': [45.6, -93.9], 'MS': [32.7, -89.6], 'MO': [38.4, -92.2], 'MT': [46.9, -110.4], 'NE': [41.1, -98.2], 'NV': [38.3, -117.0], 'NH': [43.4, -71.5], 'NJ': [40.2, -74.5], 'NM': [34.8, -106.2], 'NY': [42.1, -74.9], 'NC': [35.6, -79.8], 'ND': [47.5, -99.7], 'OH': [40.3, -82.7], 'OK': [35.5, -96.9], 'OR': [44.5, -122.0], 'PA': [40.5, -77.2], 'RI': [41.6, -71.5], 'SC': [33.8, -80.9], 'SD': [44.2, -99.4], 'TN': [35.7, -86.6], 'TX': [31.0, -97.5], 'UT': [40.1, -111.8], 'VT': [44.0, -72.7], 'VA': [37.7, -78.1], 'WA': [47.4, -120.4], 'WV': [38.4, -80.9], 'WI': [44.2, -89.6], 'WY': [42.7, -107.3]}
@@ -23,21 +23,26 @@ if uploaded_file:
     st.sidebar.markdown("### 全域篩選")
     date_range = st.sidebar.date_input("日期篩選", [df['Date(出庫)'].min().date(), df['Date(出庫)'].max().date()])
     
-    # 動態產生多選篩選器
     filters = {}
     dims = [('Machine Type', '設備維度'), ('Field', '場域維度'), ('Area', '區域維度'), ('Company', '客戶維度'), ('Device/Platform', '平台維度')]
     for col, label in dims:
         selected = st.sidebar.multiselect(f"{label}篩選 (留空即全選)", df[col].unique().tolist())
         filters[col] = selected if selected else df[col].unique().tolist()
     
-    # 套用所有篩選條件
     f_df = df[(df['Date(出庫)'].dt.date >= date_range[0]) & (df['Date(出庫)'].dt.date <= date_range[1])].copy()
     for col, selected in filters.items():
         f_df = f_df[f_df[col].isin(selected)]
     f_df['Month-Date'] = f_df['Date(出庫)'].dt.strftime('%Y-%m')
 
-    # 1. 北美地圖 (強制靠左、藍色大字體州代碼)
+    # 地圖渲染與設備總數統計
     st.subheader("🗺️ 北美設備戰術分佈")
+    
+    # 計算各類設備總數
+    type_summary = f_df.groupby('Machine Type')['Outbound Qty (Item)'].sum()
+    cols = st.columns(len(type_summary))
+    for i, (m_type, total) in enumerate(type_summary.items()):
+        cols[i].metric(label=f"總 {m_type}", value=int(total))
+
     fig_map = go.Figure()
     fig_map.add_trace(go.Scattergeo(lon=[US_STATES_COORDS[s][1] for s in US_STATES_COORDS], lat=[US_STATES_COORDS[s][0] for s in US_STATES_COORDS], text=list(US_STATES_COORDS.keys()), mode='text', textfont=dict(size=14, color='blue'), showlegend=False))
     
@@ -45,10 +50,10 @@ if uploaded_file:
         m_df = f_df[f_df['Machine Type'] == m].groupby('State Code')['Outbound Qty (Item)'].sum().reset_index()
         fig_map.add_trace(go.Scattergeo(locations=m_df['State Code'], locationmode="USA-states", marker=dict(size=m_df['Outbound Qty (Item)']*2.5), name=m))
     
-    fig_map.update_layout(geo=dict(scope='usa', fitbounds="locations"), height=800, margin={"l": 0, "r": 150, "t": 0, "b": 0}, legend=dict(x=1.0, y=0.5))
+    fig_map.update_layout(geo=dict(scope='usa', fitbounds="locations"), height=600, margin={"l": 0, "r": 150, "t": 0, "b": 0}, legend=dict(x=1.0, y=0.5))
     st.plotly_chart(fig_map, use_container_width=True)
 
-    # 2. 五大分析維度
+    # 五大分析維度
     for dim, name in dims:
         st.markdown("---")
         st.subheader(f"📈 {name}")
@@ -68,7 +73,7 @@ if uploaded_file:
             st.plotly_chart(fig, use_container_width=True)
             if show_table: st.dataframe(df_g, use_container_width=True)
 
-    # 3. PPTX 導出 (優雅降級)
+    # PPTX 導出
     if st.sidebar.button("📊 導出完整戰情室報表"):
         prs = Presentation()
         for dim, name in dims:
