@@ -5,12 +5,49 @@ import plotly.graph_objects as go
 from pptx import Presentation
 from pptx.util import Inches, Pt
 import io
+import os
 import plotly.io as pio
 from contextlib import contextmanager
 
 # 頁面設定
 st.set_page_config(layout="wide", page_title="AICS 北美決策中心")
 st.title("🌐 AICS 北美部署決策中心 (V8.12 版)")
+
+# 分享連結用的共用資料存放位置：管理者上傳的檔案會存在這裡，訪客（viewer）從這裡讀取，
+# 不會出現在 git 版本紀錄裡（見 .gitignore），Streamlit Cloud 重新部署時會被清空，須重新上傳。
+SHARED_DATA_PATH = "data/shared_dataset.xlsx"
+
+
+def check_access():
+    if st.session_state.get("role"):
+        return st.session_state["role"]
+
+    try:
+        admin_pw = st.secrets.get("admin_password")
+        viewer_pw = st.secrets.get("viewer_password")
+    except Exception:
+        # 尚未設定 .streamlit/secrets.toml（本機開發或還沒設定 Streamlit Cloud Secrets）時會拋例外。
+        admin_pw = viewer_pw = None
+    if not admin_pw and not viewer_pw:
+        # 尚未在 Streamlit Cloud 的 Secrets 設定密碼時，維持原本不需要密碼即可使用的行為。
+        st.session_state["role"] = "admin"
+        return "admin"
+
+    st.subheader("🔒 請輸入存取密碼")
+    pwd = st.text_input("密碼", type="password")
+    if not pwd:
+        st.stop()
+    if admin_pw and pwd == admin_pw:
+        st.session_state["role"] = "admin"
+    elif viewer_pw and pwd == viewer_pw:
+        st.session_state["role"] = "viewer"
+    else:
+        st.error("密碼錯誤")
+        st.stop()
+    st.rerun()
+
+
+role = check_access()
 
 # 北美州代碼與座標映射表
 US_STATES_COORDS = {'AL': [32.8, -86.7], 'AK': [61.3, -152.4], 'AZ': [33.7, -111.4], 'AR': [34.9, -92.3], 'CA': [36.1, -119.6], 'CO': [39.0, -105.3], 'CT': [41.5, -72.7], 'DE': [39.3, -75.5], 'FL': [27.7, -81.6], 'GA': [33.0, -83.6], 'HI': [21.0, -157.4], 'ID': [44.2, -114.4], 'IL': [40.3, -88.9], 'IN': [39.8, -86.2], 'IA': [42.0, -93.2], 'KS': [38.5, -96.7], 'KY': [37.6, -84.6], 'LA': [31.1, -91.8], 'ME': [44.6, -69.3], 'MD': [39.0, -76.8], 'MA': [42.2, -71.5], 'MI': [43.3, -84.5], 'MN': [45.6, -93.9], 'MS': [32.7, -89.6], 'MO': [38.4, -92.2], 'MT': [46.9, -110.4], 'NE': [41.1, -98.2], 'NV': [38.3, -117.0], 'NH': [43.4, -71.5], 'NJ': [40.2, -74.5], 'NM': [34.8, -106.2], 'NY': [42.1, -74.9], 'NC': [35.6, -79.8], 'ND': [47.5, -99.7], 'OH': [40.3, -82.7], 'OK': [35.5, -96.9], 'OR': [44.5, -122.0], 'PA': [40.5, -77.2], 'RI': [41.6, -71.5], 'SC': [33.8, -80.9], 'SD': [44.2, -99.4], 'TN': [35.7, -86.6], 'TX': [31.0, -97.5], 'UT': [40.1, -111.8], 'VT': [44.0, -72.7], 'VA': [37.7, -78.1], 'WA': [47.4, -120.4], 'WV': [38.4, -80.9], 'WI': [44.2, -89.6], 'WY': [42.7, -107.3]}
@@ -158,9 +195,23 @@ def add_chart_slide(prs, cfg, title, fig, table_df, is_map=False):
     return slide
 
 
-uploaded_file = st.sidebar.file_uploader("上傳 Excel", type=["xlsx"])
-if uploaded_file:
-    df = pd.read_excel(uploaded_file, sheet_name='Data Base')
+if role == "admin":
+    uploaded_file = st.sidebar.file_uploader("上傳 Excel（分享連結的訪客會看到這份資料）", type=["xlsx"])
+    if uploaded_file:
+        os.makedirs(os.path.dirname(SHARED_DATA_PATH), exist_ok=True)
+        with open(SHARED_DATA_PATH, "wb") as f:
+            f.write(uploaded_file.getvalue())
+        st.sidebar.success("已更新分享連結訪客看到的資料")
+    data_source = uploaded_file
+else:
+    st.sidebar.info("檢視模式：資料由管理者提供，無法上傳或下載原始檔案")
+    data_source = SHARED_DATA_PATH if os.path.exists(SHARED_DATA_PATH) else None
+
+if not data_source:
+    if role == "viewer":
+        st.info("尚未有可瀏覽的資料，請聯繫管理者上傳。")
+else:
+    df = pd.read_excel(data_source, sheet_name='Data Base')
     df.columns = df.columns.str.strip()
     df['Date(出庫)'] = pd.to_datetime(df['Date(出庫)'])
 
