@@ -48,7 +48,7 @@ if uploaded_file:
         m_df = f_df[f_df['Machine Type'] == m].groupby('State Code')['Outbound Qty (Item)'].sum().reset_index()
         fig_map.add_trace(go.Scattergeo(locations=m_df['State Code'], locationmode="USA-states", marker=dict(size=m_df['Outbound Qty (Item)']*2.5), name=m))
     
-    fig_map.update_layout(geo=dict(scope='usa', fitbounds="locations"), height=600, margin={"l": 0, "r": 150, "t": 0, "b": 0}, legend=dict(x=1.0, y=0.5))
+    fig_map.update_layout(geo=dict(scope='usa', projection=dict(type='albers usa')), height=600, margin={"l": 0, "r": 0, "t": 0, "b": 60}, legend=dict(orientation='h', x=0.5, xanchor='center', y=-0.1))
     st.plotly_chart(fig_map, use_container_width=True)
 
     # 五大分析維度
