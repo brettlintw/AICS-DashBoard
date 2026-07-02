@@ -138,7 +138,7 @@ def make_report_presentation(bg_template_bytes):
         cfg = dict(
             layout=layout, left=Inches(0.4), width=Inches(9.2), content_top=content_top,
             safe_bottom=int(prs.slide_height * 0.87), row_height=Inches(0.2), max_rows_cap=8,
-            header_font=Pt(8), cell_font=Pt(7), chart_px=(1600, 320), map_px=(1600, 480),
+            header_font=Pt(8), cell_font=Pt(7), note_font=Pt(6), chart_px=(1600, 320), map_px=(1600, 480),
         )
     else:
         prs = Presentation()
@@ -148,7 +148,7 @@ def make_report_presentation(bg_template_bytes):
         cfg = dict(
             layout=layout, left=Inches(0.5), width=Inches(12), content_top=Inches(0.9),
             safe_bottom=int(prs.slide_height * 0.95), row_height=Inches(0.32), max_rows_cap=10,
-            header_font=Pt(11), cell_font=Pt(10), chart_px=(1600, 450), map_px=(1600, 700),
+            header_font=Pt(11), cell_font=Pt(10), note_font=Pt(8), chart_px=(1600, 450), map_px=(1600, 700),
         )
     return prs, cfg
 
@@ -189,9 +189,11 @@ def add_chart_slide(prs, cfg, title, fig, table_df, is_map=False):
                 cell.text = str(display_df.iloc[r, c])
                 cell.text_frame.paragraphs[0].font.size = cfg['cell_font']
         if len(table_df) > max_rows:
-            note_top = table_top + table_height + Inches(0.08)
-            note = slide.shapes.add_textbox(cfg['left'], note_top, cfg['width'], Inches(0.25))
+            # 固定貼在版面左下角（而非緊跟在表格後面），字體縮小成註腳大小，避免搶版面。
+            note_top = cfg['safe_bottom'] - Inches(0.22)
+            note = slide.shapes.add_textbox(Inches(0.25), note_top, cfg['width'], Inches(0.22))
             note.text_frame.text = f"僅顯示前 {max_rows} 筆，完整資料請見網頁畫面"
+            note.text_frame.paragraphs[0].font.size = cfg['note_font']
     return slide
 
 
