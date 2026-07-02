@@ -103,7 +103,7 @@ def build_map_fig(f_df):
     fig_map.update_layout(
         geo=dict(scope='usa', projection=dict(type='albers usa'),
                  landcolor='rgba(255,255,255,0.5)', lakecolor='rgba(255,255,255,0.3)',
-                 bgcolor='rgba(0,0,0,0)', subunitcolor='#9aa5b1'),
+                 bgcolor='white', subunitcolor='#9aa5b1'),
         images=[dict(source=load_flag_data_uri(), xref="paper", yref="paper",
                      x=0, y=1, sizex=1, sizey=1, xanchor="left", yanchor="top",
                      sizing="stretch", opacity=0.16, layer="below")],
