@@ -181,8 +181,12 @@ def find_layout_by_name(prs, name):
 
 
 def remove_all_slides(prs):
+    # 只把 <p:sldId> 從清單拿掉，範本裡原本那張投影片對應的關聯(relationship)還留著，
+    # 沒被任何東西參照，PowerPoint 開啟時會判定簡報內容有問題、要求修復。
+    # 兩個都要清乾淨才是正確的移除方式。
     xml_slides = prs.slides._sldIdLst
     for slide_id in list(xml_slides):
+        prs.part.drop_rel(slide_id.rId)
         xml_slides.remove(slide_id)
 
 
