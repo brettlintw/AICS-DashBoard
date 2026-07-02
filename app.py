@@ -319,6 +319,42 @@ def add_dual_chart_slide(prs, cfg, title, left_fig, right_fig, table_df):
             slide.shapes.add_picture(io.BytesIO(img_bytes), box_left, cfg['content_top'], width=box_width, height=max_img_height)
         except Exception:
             pass
+    return slide
+
+
+def add_stacked_chart_slide(prs, cfg, title, sections):
+    # sections: [(小標題, Plotly Figure 或字串訊息), ...]，由上到下平分可用的垂直空間，不放表格。
+    slide = prs.slides.add_slide(cfg['layout'])
+    if slide.shapes.title is not None:
+        slide.shapes.title.text = title
+    else:
+        slide.shapes.add_textbox(cfg['left'], Inches(0.2), cfg['width'], Inches(0.5)).text_frame.text = title
+
+    n = len(sections)
+    label_h = Inches(0.3)
+    gap = Inches(0.15)
+    total_height = cfg['safe_bottom'] - cfg['content_top']
+    section_height = (total_height - n * label_h - (n - 1) * gap) / n
+
+    y = cfg['content_top']
+    for label, content in sections:
+        label_box = slide.shapes.add_textbox(cfg['left'], y, cfg['width'], label_h)
+        label_box.text_frame.text = label
+        label_box.text_frame.paragraphs[0].font.bold = True
+        label_box.text_frame.paragraphs[0].font.size = cfg['header_font']
+        y += label_h
+
+        if isinstance(content, str):
+            msg_box = slide.shapes.add_textbox(cfg['left'], y, cfg['width'], section_height)
+            msg_box.text_frame.text = content
+            msg_box.text_frame.paragraphs[0].font.size = cfg['cell_font']
+        else:
+            try:
+                img_bytes = pio.to_image(content, format="png", width=_emu_to_px(cfg['width']), height=_emu_to_px(section_height))
+                slide.shapes.add_picture(io.BytesIO(img_bytes), cfg['left'], y, width=cfg['width'], height=section_height)
+            except Exception:
+                pass
+        y += section_height + gap
 
     return slide
 
@@ -459,17 +495,12 @@ else:
             for name, dim, mode, chart_type, df_g, show_table in dim_exports:
                 add_chart_slide(prs, cfg, f"分析維度: {name}", build_dim_fig(df_g, dim, mode, chart_type), df_g if show_table else None)
 
-            add_chart_slide(prs, cfg, "客戶 ABC 分析", build_abc_fig(abc_df), abc_df if show_table_abc else None)
-
-            if len(churn_list) > 0:
-                add_chart_slide(prs, cfg, f"流失預警（超過 {churn_threshold} 個月無出貨）", build_churn_fig(churn_list, churn_threshold), churn_list if show_table_churn else None)
-            else:
-                no_churn_slide = prs.slides.add_slide(cfg['layout'])
-                if no_churn_slide.shapes.title is not None:
-                    no_churn_slide.shapes.title.text = "流失預警"
-                else:
-                    no_churn_slide.shapes.add_textbox(cfg['left'], Inches(0.2), cfg['width'], Inches(0.5)).text_frame.text = "流失預警"
-                no_churn_slide.shapes.add_textbox(cfg['left'], cfg['content_top'], cfg['width'], Inches(0.5)).text_frame.text = "目前沒有符合流失警戒門檻的客戶"
+            churn_label = f"⚠️ 流失預警（超過 {churn_threshold} 個月無出貨）" if len(churn_list) > 0 else "⚠️ 流失預警"
+            churn_content = build_churn_fig(churn_list, churn_threshold) if len(churn_list) > 0 else "目前沒有符合流失警戒門檻的客戶"
+            add_stacked_chart_slide(
+                prs, cfg, "客戶經營洞察",
+                [("📊 客戶 ABC 分析", build_abc_fig(abc_df)),
+                 (churn_label, churn_content)])
 
             buf = io.BytesIO()
             prs.save(buf)
