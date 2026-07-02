@@ -11,7 +11,7 @@ from contextlib import contextmanager
 
 # 頁面設定
 st.set_page_config(layout="wide", page_title="AICS 北美決策中心")
-st.title("🌐 AICS 北美部署決策中心 (V8.12 版)")
+st.title("🌐 AICS 北美部署決策中心 (V1.0 版)")
 
 # 分享連結用的共用資料存放位置：管理者上傳的檔案會存在這裡，訪客（viewer）從這裡讀取，
 # 不會出現在 git 版本紀錄裡（見 .gitignore），Streamlit Cloud 重新部署時會被清空，須重新上傳。
@@ -222,14 +222,28 @@ def make_report_presentation(bg_template_bytes):
     return prs, cfg
 
 
-def _add_table_to_slide(slide, cfg, table_top, table_df):
+def _add_table_to_slide(slide, cfg, table_df, anchor_top=None, anchor_bottom=None):
+    """畫表格。anchor_top：表格緊跟在圖片下方，剩餘空間能放幾筆就放幾筆。
+    anchor_bottom：表格固定貼齊這個高度（版面最下方），列數由資料量決定，回傳表格頂端位置給呼叫端用來計算圖片還能放多大。"""
     if table_df is None or len(table_df) == 0:
-        return
-    available = cfg['safe_bottom'] - table_top - Inches(0.3)
-    max_rows = max(1, min(cfg['max_rows_cap'], int(available / cfg['row_height']) - 1))
-    display_df = table_df.head(max_rows)
-    rows, cols = display_df.shape
-    table_height = cfg['row_height'] * (rows + 1)
+        return anchor_bottom
+
+    if anchor_top is not None:
+        available = cfg['safe_bottom'] - anchor_top - Inches(0.3)
+        max_rows = max(1, min(cfg['max_rows_cap'], int(available / cfg['row_height']) - 1))
+        display_df = table_df.head(max_rows)
+        rows, cols = display_df.shape
+        table_height = cfg['row_height'] * (rows + 1)
+        table_top = anchor_top
+        show_note = len(table_df) > max_rows
+    else:
+        max_rows = min(len(table_df), cfg['max_rows_cap'])
+        display_df = table_df.head(max_rows)
+        rows, cols = display_df.shape
+        table_height = cfg['row_height'] * (rows + 1)
+        table_top = anchor_bottom - table_height
+        show_note = False  # 貼底模式是給列數固定很少的資料用，版面沒有預留註腳空間
+
     table = slide.shapes.add_table(rows + 1, cols, cfg['left'], table_top, cfg['width'], table_height).table
     for r_idx in range(rows + 1):
         table.rows[r_idx].height = cfg['row_height']
@@ -242,12 +256,20 @@ def _add_table_to_slide(slide, cfg, table_top, table_df):
             cell = table.cell(r + 1, c)
             cell.text = str(display_df.iloc[r, c])
             cell.text_frame.paragraphs[0].font.size = cfg['cell_font']
-    if len(table_df) > max_rows:
+    if show_note:
         # 固定貼在版面左下角（而非緊跟在表格後面），字體縮小成註腳大小，避免搶版面。
         note_top = cfg['safe_bottom'] - Inches(0.22)
         note = slide.shapes.add_textbox(Inches(0.25), note_top, cfg['width'], Inches(0.22))
         note.text_frame.text = f"僅顯示前 {max_rows} 筆，完整資料請見網頁畫面"
         note.text_frame.paragraphs[0].font.size = cfg['note_font']
+    return table_top
+
+
+PX_PER_INCH = 160  # 匯出圖片解析度，太低字會模糊、太高檔案會變大
+
+
+def _emu_to_px(emu):
+    return max(1, int(emu / 914400 * PX_PER_INCH))
 
 
 def add_chart_slide(prs, cfg, title, fig, table_df, is_map=False):
@@ -266,11 +288,11 @@ def add_chart_slide(prs, cfg, title, fig, table_df, is_map=False):
     except Exception:
         pass
 
-    _add_table_to_slide(slide, cfg, content_bottom + Inches(0.2), table_df)
+    _add_table_to_slide(slide, cfg, table_df, anchor_top=content_bottom + Inches(0.2))
     return slide
 
 
-def add_dual_chart_slide(prs, cfg, title, left_fig, left_px, right_fig, right_px, table_df):
+def add_dual_chart_slide(prs, cfg, title, left_fig, right_fig, table_df):
     slide = prs.slides.add_slide(cfg['layout'])
     if slide.shapes.title is not None:
         slide.shapes.title.text = title
@@ -282,19 +304,22 @@ def add_dual_chart_slide(prs, cfg, title, left_fig, left_px, right_fig, right_px
     right_width = cfg['width'] - left_width - gap
     right_left = cfg['left'] + left_width + gap
 
-    content_bottom = cfg['content_top']
-    for fig, px_dims, box_left, box_width in (
-        (left_fig, left_px, cfg['left'], left_width),
-        (right_fig, right_px, right_left, right_width),
+    # 表格先貼齊版面底端算出佔用高度，剩下的垂直空間直接拿去請 Plotly 用同樣比例畫圖，
+    # 保證圖片剛好填滿可用空間、不變形也不會溢出，比事後縮放更準確。
+    table_top = _add_table_to_slide(slide, cfg, table_df, anchor_bottom=cfg['safe_bottom'])
+    image_area_bottom = (table_top - Inches(0.2)) if table_top is not None else cfg['safe_bottom']
+    max_img_height = image_area_bottom - cfg['content_top']
+
+    for fig, box_left, box_width in (
+        (left_fig, cfg['left'], left_width),
+        (right_fig, right_left, right_width),
     ):
         try:
-            img_bytes = pio.to_image(fig, format="png", width=px_dims[0], height=px_dims[1])
-            pic = slide.shapes.add_picture(io.BytesIO(img_bytes), box_left, cfg['content_top'], width=box_width)
-            content_bottom = max(content_bottom, cfg['content_top'] + pic.height)
+            img_bytes = pio.to_image(fig, format="png", width=_emu_to_px(box_width), height=_emu_to_px(max_img_height))
+            slide.shapes.add_picture(io.BytesIO(img_bytes), box_left, cfg['content_top'], width=box_width, height=max_img_height)
         except Exception:
             pass
 
-    _add_table_to_slide(slide, cfg, content_bottom + Inches(0.2), table_df)
     return slide
 
 
@@ -426,11 +451,9 @@ else:
             prs, cfg = make_report_presentation(bg_template_file.getvalue() if bg_template_file else None)
 
             type_rank_df = f_df.groupby('Machine Type')['Outbound Qty (Item)'].sum().sort_values(ascending=False).reset_index()
-            # 像素比例跟版面上左 60% / 右 38% 的寬度比對應，讓左右兩張圖疊出來的高度差不多一致。
             add_dual_chart_slide(
                 prs, cfg, "北美設備戰術分佈",
-                build_map_fig(f_df), (1100, 420),
-                build_type_rank_fig(f_df), (700, 420),
+                build_map_fig(f_df), build_type_rank_fig(f_df),
                 type_rank_df)
 
             for name, dim, mode, chart_type, df_g in dim_exports:
