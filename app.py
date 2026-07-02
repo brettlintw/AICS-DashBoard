@@ -6,6 +6,7 @@ from pptx import Presentation
 from pptx.util import Inches, Pt
 import io
 import os
+import base64
 import plotly.io as pio
 from contextlib import contextmanager
 
@@ -52,6 +53,17 @@ role = check_access()
 # 北美州代碼與座標映射表
 US_STATES_COORDS = {'AL': [32.8, -86.7], 'AK': [61.3, -152.4], 'AZ': [33.7, -111.4], 'AR': [34.9, -92.3], 'CA': [36.1, -119.6], 'CO': [39.0, -105.3], 'CT': [41.5, -72.7], 'DE': [39.3, -75.5], 'FL': [27.7, -81.6], 'GA': [33.0, -83.6], 'HI': [21.0, -157.4], 'ID': [44.2, -114.4], 'IL': [40.3, -88.9], 'IN': [39.8, -86.2], 'IA': [42.0, -93.2], 'KS': [38.5, -96.7], 'KY': [37.6, -84.6], 'LA': [31.1, -91.8], 'ME': [44.6, -69.3], 'MD': [39.0, -76.8], 'MA': [42.2, -71.5], 'MI': [43.3, -84.5], 'MN': [45.6, -93.9], 'MS': [32.7, -89.6], 'MO': [38.4, -92.2], 'MT': [46.9, -110.4], 'NE': [41.1, -98.2], 'NV': [38.3, -117.0], 'NH': [43.4, -71.5], 'NJ': [40.2, -74.5], 'NM': [34.8, -106.2], 'NY': [42.1, -74.9], 'NC': [35.6, -79.8], 'ND': [47.5, -99.7], 'OH': [40.3, -82.7], 'OK': [35.5, -96.9], 'OR': [44.5, -122.0], 'PA': [40.5, -77.2], 'RI': [41.6, -71.5], 'SC': [33.8, -80.9], 'SD': [44.2, -99.4], 'TN': [35.7, -86.6], 'TX': [31.0, -97.5], 'UT': [40.1, -111.8], 'VT': [44.0, -72.7], 'VA': [37.7, -78.1], 'WA': [47.4, -120.4], 'WV': [38.4, -80.9], 'WI': [44.2, -89.6], 'WY': [42.7, -107.3]}
 
+# 高對比氣泡配色（避免預設色系太相近分不清楚）
+BUBBLE_COLORS = ['#e6194B', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#42d4f4', '#f032e6', '#469990', '#9A6324', '#000075']
+
+FLAG_IMAGE_PATH = os.path.join(os.path.dirname(__file__), "assets", "us_flag.png")
+
+
+@st.cache_data
+def load_flag_data_uri():
+    with open(FLAG_IMAGE_PATH, "rb") as f:
+        return "data:image/png;base64," + base64.b64encode(f.read()).decode()
+
 
 @contextmanager
 def export_color_theme():
@@ -66,12 +78,37 @@ def export_color_theme():
 
 
 def build_map_fig(f_df):
+    # 氣泡大小改用「目前篩選範圍內的最小~最大值」正規化到固定的可視像素區間，
+    # 這樣不管篩選後數據是大是小（例如只選一天、或只剩個位數出貨量），氣泡都不會小到看不見。
+    MIN_BUBBLE, MAX_BUBBLE = 12, 45
+    state_totals = f_df.groupby(['Machine Type', 'State Code'])['Outbound Qty (Item)'].sum()
+    qty_min = state_totals.min() if len(state_totals) else 0
+    qty_max = state_totals.max() if len(state_totals) else 0
+
+    def scaled_size(qty):
+        if qty_max == qty_min:
+            return MAX_BUBBLE
+        return MIN_BUBBLE + (qty - qty_min) / (qty_max - qty_min) * (MAX_BUBBLE - MIN_BUBBLE)
+
     fig_map = go.Figure()
     fig_map.add_trace(go.Scattergeo(lon=[US_STATES_COORDS[s][1] for s in US_STATES_COORDS], lat=[US_STATES_COORDS[s][0] for s in US_STATES_COORDS], text=list(US_STATES_COORDS.keys()), mode='text', textfont=dict(size=14, color='blue'), showlegend=False))
-    for m in f_df['Machine Type'].unique():
+    for i, m in enumerate(f_df['Machine Type'].unique()):
         m_df = f_df[f_df['Machine Type'] == m].groupby('State Code')['Outbound Qty (Item)'].sum().reset_index()
-        fig_map.add_trace(go.Scattergeo(locations=m_df['State Code'], locationmode="USA-states", marker=dict(size=m_df['Outbound Qty (Item)']*2.5), name=m))
-    fig_map.update_layout(geo=dict(scope='usa', projection=dict(type='albers usa')), height=600, margin={"l": 0, "r": 0, "t": 0, "b": 60}, legend=dict(orientation='h', x=0.5, xanchor='center', y=-0.1))
+        fig_map.add_trace(go.Scattergeo(locations=m_df['State Code'], locationmode="USA-states",
+                                         marker=dict(size=m_df['Outbound Qty (Item)'].apply(scaled_size),
+                                                      color=BUBBLE_COLORS[i % len(BUBBLE_COLORS)],
+                                                      line=dict(width=1, color='white')),
+                                         text=m_df['Outbound Qty (Item)'], hovertemplate="%{location}: %{text}<extra></extra>",
+                                         name=m))
+    fig_map.update_layout(
+        geo=dict(scope='usa', projection=dict(type='albers usa'),
+                 landcolor='rgba(255,255,255,0.5)', lakecolor='rgba(255,255,255,0.3)',
+                 bgcolor='rgba(0,0,0,0)', subunitcolor='#9aa5b1'),
+        images=[dict(source=load_flag_data_uri(), xref="paper", yref="paper",
+                     x=0, y=1, sizex=1, sizey=1, xanchor="left", yanchor="top",
+                     sizing="stretch", opacity=0.16, layer="below")],
+        paper_bgcolor='white', plot_bgcolor='rgba(0,0,0,0)',
+        height=600, margin={"l": 0, "r": 0, "t": 0, "b": 60}, legend=dict(orientation='h', x=0.5, xanchor='center', y=-0.1))
     return fig_map
 
 
@@ -138,7 +175,7 @@ def make_report_presentation(bg_template_bytes):
         cfg = dict(
             layout=layout, left=Inches(0.4), width=Inches(9.2), content_top=content_top,
             safe_bottom=int(prs.slide_height * 0.87), row_height=Inches(0.2), max_rows_cap=8,
-            header_font=Pt(8), cell_font=Pt(7), chart_px=(1600, 320), map_px=(1600, 480),
+            header_font=Pt(8), cell_font=Pt(7), note_font=Pt(6), chart_px=(1600, 320), map_px=(1600, 480),
         )
     else:
         prs = Presentation()
@@ -148,7 +185,7 @@ def make_report_presentation(bg_template_bytes):
         cfg = dict(
             layout=layout, left=Inches(0.5), width=Inches(12), content_top=Inches(0.9),
             safe_bottom=int(prs.slide_height * 0.95), row_height=Inches(0.32), max_rows_cap=10,
-            header_font=Pt(11), cell_font=Pt(10), chart_px=(1600, 450), map_px=(1600, 700),
+            header_font=Pt(11), cell_font=Pt(10), note_font=Pt(8), chart_px=(1600, 450), map_px=(1600, 700),
         )
     return prs, cfg
 
@@ -189,9 +226,11 @@ def add_chart_slide(prs, cfg, title, fig, table_df, is_map=False):
                 cell.text = str(display_df.iloc[r, c])
                 cell.text_frame.paragraphs[0].font.size = cfg['cell_font']
         if len(table_df) > max_rows:
-            note_top = table_top + table_height + Inches(0.08)
-            note = slide.shapes.add_textbox(cfg['left'], note_top, cfg['width'], Inches(0.25))
+            # 固定貼在版面左下角（而非緊跟在表格後面），字體縮小成註腳大小，避免搶版面。
+            note_top = cfg['safe_bottom'] - Inches(0.22)
+            note = slide.shapes.add_textbox(Inches(0.25), note_top, cfg['width'], Inches(0.22))
             note.text_frame.text = f"僅顯示前 {max_rows} 筆，完整資料請見網頁畫面"
+            note.text_frame.paragraphs[0].font.size = cfg['note_font']
     return slide
 
 
