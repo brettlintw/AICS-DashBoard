@@ -66,11 +66,26 @@ def export_color_theme():
 
 
 def build_map_fig(f_df):
+    # 氣泡大小改用「目前篩選範圍內的最小~最大值」正規化到固定的可視像素區間，
+    # 這樣不管篩選後數據是大是小（例如只選一天、或只剩個位數出貨量），氣泡都不會小到看不見。
+    MIN_BUBBLE, MAX_BUBBLE = 12, 45
+    state_totals = f_df.groupby(['Machine Type', 'State Code'])['Outbound Qty (Item)'].sum()
+    qty_min = state_totals.min() if len(state_totals) else 0
+    qty_max = state_totals.max() if len(state_totals) else 0
+
+    def scaled_size(qty):
+        if qty_max == qty_min:
+            return MAX_BUBBLE
+        return MIN_BUBBLE + (qty - qty_min) / (qty_max - qty_min) * (MAX_BUBBLE - MIN_BUBBLE)
+
     fig_map = go.Figure()
     fig_map.add_trace(go.Scattergeo(lon=[US_STATES_COORDS[s][1] for s in US_STATES_COORDS], lat=[US_STATES_COORDS[s][0] for s in US_STATES_COORDS], text=list(US_STATES_COORDS.keys()), mode='text', textfont=dict(size=14, color='blue'), showlegend=False))
     for m in f_df['Machine Type'].unique():
         m_df = f_df[f_df['Machine Type'] == m].groupby('State Code')['Outbound Qty (Item)'].sum().reset_index()
-        fig_map.add_trace(go.Scattergeo(locations=m_df['State Code'], locationmode="USA-states", marker=dict(size=m_df['Outbound Qty (Item)']*2.5), name=m))
+        fig_map.add_trace(go.Scattergeo(locations=m_df['State Code'], locationmode="USA-states",
+                                         marker=dict(size=m_df['Outbound Qty (Item)'].apply(scaled_size)),
+                                         text=m_df['Outbound Qty (Item)'], hovertemplate="%{location}: %{text}<extra></extra>",
+                                         name=m))
     fig_map.update_layout(geo=dict(scope='usa', projection=dict(type='albers usa')), height=600, margin={"l": 0, "r": 0, "t": 0, "b": 60}, legend=dict(orientation='h', x=0.5, xanchor='center', y=-0.1))
     return fig_map
 
