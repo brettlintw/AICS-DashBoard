@@ -390,7 +390,7 @@ else:
 
             st.plotly_chart(fig, use_container_width=True)
             if show_table: st.dataframe(df_g, use_container_width=True)
-        dim_exports.append((name, dim, mode, chart_type, df_g))
+        dim_exports.append((name, dim, mode, chart_type, df_g, show_table))
 
     # 客戶經營洞察：ABC 分析 + 流失預警
     st.markdown("---")
@@ -456,13 +456,13 @@ else:
                 build_map_fig(f_df), build_type_rank_fig(f_df),
                 type_rank_df)
 
-            for name, dim, mode, chart_type, df_g in dim_exports:
-                add_chart_slide(prs, cfg, f"分析維度: {name}", build_dim_fig(df_g, dim, mode, chart_type), df_g)
+            for name, dim, mode, chart_type, df_g, show_table in dim_exports:
+                add_chart_slide(prs, cfg, f"分析維度: {name}", build_dim_fig(df_g, dim, mode, chart_type), df_g if show_table else None)
 
-            add_chart_slide(prs, cfg, "客戶 ABC 分析", build_abc_fig(abc_df), abc_df)
+            add_chart_slide(prs, cfg, "客戶 ABC 分析", build_abc_fig(abc_df), abc_df if show_table_abc else None)
 
             if len(churn_list) > 0:
-                add_chart_slide(prs, cfg, f"流失預警（超過 {churn_threshold} 個月無出貨）", build_churn_fig(churn_list, churn_threshold), churn_list)
+                add_chart_slide(prs, cfg, f"流失預警（超過 {churn_threshold} 個月無出貨）", build_churn_fig(churn_list, churn_threshold), churn_list if show_table_churn else None)
             else:
                 no_churn_slide = prs.slides.add_slide(cfg['layout'])
                 if no_churn_slide.shapes.title is not None:
