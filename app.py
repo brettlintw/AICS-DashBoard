@@ -222,6 +222,34 @@ def make_report_presentation(bg_template_bytes):
     return prs, cfg
 
 
+def _add_table_to_slide(slide, cfg, table_top, table_df):
+    if table_df is None or len(table_df) == 0:
+        return
+    available = cfg['safe_bottom'] - table_top - Inches(0.3)
+    max_rows = max(1, min(cfg['max_rows_cap'], int(available / cfg['row_height']) - 1))
+    display_df = table_df.head(max_rows)
+    rows, cols = display_df.shape
+    table_height = cfg['row_height'] * (rows + 1)
+    table = slide.shapes.add_table(rows + 1, cols, cfg['left'], table_top, cfg['width'], table_height).table
+    for r_idx in range(rows + 1):
+        table.rows[r_idx].height = cfg['row_height']
+    for i, col in enumerate(display_df.columns):
+        cell = table.cell(0, i)
+        cell.text = str(col)
+        cell.text_frame.paragraphs[0].font.size = cfg['header_font']
+    for r in range(rows):
+        for c in range(cols):
+            cell = table.cell(r + 1, c)
+            cell.text = str(display_df.iloc[r, c])
+            cell.text_frame.paragraphs[0].font.size = cfg['cell_font']
+    if len(table_df) > max_rows:
+        # 固定貼在版面左下角（而非緊跟在表格後面），字體縮小成註腳大小，避免搶版面。
+        note_top = cfg['safe_bottom'] - Inches(0.22)
+        note = slide.shapes.add_textbox(Inches(0.25), note_top, cfg['width'], Inches(0.22))
+        note.text_frame.text = f"僅顯示前 {max_rows} 筆，完整資料請見網頁畫面"
+        note.text_frame.paragraphs[0].font.size = cfg['note_font']
+
+
 def add_chart_slide(prs, cfg, title, fig, table_df, is_map=False):
     slide = prs.slides.add_slide(cfg['layout'])
     if slide.shapes.title is not None:
@@ -238,31 +266,35 @@ def add_chart_slide(prs, cfg, title, fig, table_df, is_map=False):
     except Exception:
         pass
 
-    if table_df is not None and len(table_df) > 0:
-        table_top = content_bottom + Inches(0.2)
-        available = cfg['safe_bottom'] - table_top - Inches(0.3)
-        max_rows = max(1, min(cfg['max_rows_cap'], int(available / cfg['row_height']) - 1))
-        display_df = table_df.head(max_rows)
-        rows, cols = display_df.shape
-        table_height = cfg['row_height'] * (rows + 1)
-        table = slide.shapes.add_table(rows + 1, cols, cfg['left'], table_top, cfg['width'], table_height).table
-        for r_idx in range(rows + 1):
-            table.rows[r_idx].height = cfg['row_height']
-        for i, col in enumerate(display_df.columns):
-            cell = table.cell(0, i)
-            cell.text = str(col)
-            cell.text_frame.paragraphs[0].font.size = cfg['header_font']
-        for r in range(rows):
-            for c in range(cols):
-                cell = table.cell(r + 1, c)
-                cell.text = str(display_df.iloc[r, c])
-                cell.text_frame.paragraphs[0].font.size = cfg['cell_font']
-        if len(table_df) > max_rows:
-            # 固定貼在版面左下角（而非緊跟在表格後面），字體縮小成註腳大小，避免搶版面。
-            note_top = cfg['safe_bottom'] - Inches(0.22)
-            note = slide.shapes.add_textbox(Inches(0.25), note_top, cfg['width'], Inches(0.22))
-            note.text_frame.text = f"僅顯示前 {max_rows} 筆，完整資料請見網頁畫面"
-            note.text_frame.paragraphs[0].font.size = cfg['note_font']
+    _add_table_to_slide(slide, cfg, content_bottom + Inches(0.2), table_df)
+    return slide
+
+
+def add_dual_chart_slide(prs, cfg, title, left_fig, left_px, right_fig, right_px, table_df):
+    slide = prs.slides.add_slide(cfg['layout'])
+    if slide.shapes.title is not None:
+        slide.shapes.title.text = title
+    else:
+        slide.shapes.add_textbox(cfg['left'], Inches(0.2), cfg['width'], Inches(0.5)).text_frame.text = title
+
+    gap = Inches(0.2)
+    left_width = int(cfg['width'] * 0.6)
+    right_width = cfg['width'] - left_width - gap
+    right_left = cfg['left'] + left_width + gap
+
+    content_bottom = cfg['content_top']
+    for fig, px_dims, box_left, box_width in (
+        (left_fig, left_px, cfg['left'], left_width),
+        (right_fig, right_px, right_left, right_width),
+    ):
+        try:
+            img_bytes = pio.to_image(fig, format="png", width=px_dims[0], height=px_dims[1])
+            pic = slide.shapes.add_picture(io.BytesIO(img_bytes), box_left, cfg['content_top'], width=box_width)
+            content_bottom = max(content_bottom, cfg['content_top'] + pic.height)
+        except Exception:
+            pass
+
+    _add_table_to_slide(slide, cfg, content_bottom + Inches(0.2), table_df)
     return slide
 
 
@@ -393,10 +425,13 @@ else:
         with export_color_theme():
             prs, cfg = make_report_presentation(bg_template_file.getvalue() if bg_template_file else None)
 
-            add_chart_slide(prs, cfg, "北美設備戰術分佈", build_map_fig(f_df), None, is_map=True)
-
             type_rank_df = f_df.groupby('Machine Type')['Outbound Qty (Item)'].sum().sort_values(ascending=False).reset_index()
-            add_chart_slide(prs, cfg, "設備類型出貨量排名", build_type_rank_fig(f_df), type_rank_df)
+            # 像素比例跟版面上左 60% / 右 38% 的寬度比對應，讓左右兩張圖疊出來的高度差不多一致。
+            add_dual_chart_slide(
+                prs, cfg, "北美設備戰術分佈",
+                build_map_fig(f_df), (1100, 420),
+                build_type_rank_fig(f_df), (700, 420),
+                type_rank_df)
 
             for name, dim, mode, chart_type, df_g in dim_exports:
                 add_chart_slide(prs, cfg, f"分析維度: {name}", build_dim_fig(df_g, dim, mode, chart_type), df_g)
