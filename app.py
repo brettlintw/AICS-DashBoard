@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from pptx import Presentation
-from pptx.util import Inches
+from pptx.util import Inches, Pt
 import io
 import plotly.io as pio
 from contextlib import contextmanager
@@ -148,7 +148,8 @@ if uploaded_file:
 
         fig_abc = build_abc_fig(abc_df)
         st.plotly_chart(fig_abc, use_container_width=True)
-        st.dataframe(abc_df, use_container_width=True)
+        show_table_abc = st.checkbox("顯示表格", value=True, key="t_abc")
+        if show_table_abc: st.dataframe(abc_df, use_container_width=True)
 
     with tab_churn:
         churn_threshold = st.slider("流失警戒門檻（月）", min_value=1, max_value=12, value=3)
@@ -165,36 +166,57 @@ if uploaded_file:
         if len(churn_list) > 0:
             fig_churn = build_churn_fig(churn_list, churn_threshold)
             st.plotly_chart(fig_churn, use_container_width=True)
-            st.dataframe(churn_list, use_container_width=True)
+            show_table_churn = st.checkbox("顯示表格", value=True, key="t_churn")
+            if show_table_churn: st.dataframe(churn_list, use_container_width=True)
         else:
             st.success("目前沒有符合流失警戒門檻的客戶")
 
     # PPTX 導出：套用畫面上目前的圖表設定重繪，而非固定樣式
-    MAX_TABLE_ROWS = 20
+    MAX_TABLE_ROWS = 10
+    SLIDE_LEFT = Inches(0.5)
+    SLIDE_CONTENT_WIDTH = Inches(12)
+    TABLE_ROW_HEIGHT = Inches(0.32)
 
     def add_chart_slide(prs, title, fig, table_df, chart_height=450):
         slide = prs.slides.add_slide(prs.slide_layouts[6])
-        slide.shapes.add_textbox(Inches(0.5), Inches(0.2), Inches(9), Inches(0.5)).text_frame.text = title
+        slide.shapes.add_textbox(SLIDE_LEFT, Inches(0.2), SLIDE_CONTENT_WIDTH, Inches(0.5)).text_frame.text = title
+
+        content_bottom = Inches(0.9)
         try:
-            img_bytes = pio.to_image(fig, format="png", width=1200, height=chart_height)
-            slide.shapes.add_picture(io.BytesIO(img_bytes), Inches(0.5), Inches(1), width=Inches(9))
+            img_bytes = pio.to_image(fig, format="png", width=1600, height=chart_height)
+            pic = slide.shapes.add_picture(io.BytesIO(img_bytes), SLIDE_LEFT, Inches(0.9), width=SLIDE_CONTENT_WIDTH)
+            content_bottom = Inches(0.9) + pic.height
         except Exception:
             pass
+
         if table_df is not None and len(table_df) > 0:
             display_df = table_df.head(MAX_TABLE_ROWS)
             rows, cols = display_df.shape
-            table = slide.shapes.add_table(rows + 1, cols, Inches(0.5), Inches(5), Inches(9), Inches(2)).table
-            for i, col in enumerate(display_df.columns): table.cell(0, i).text = str(col)
+            table_top = content_bottom + Inches(0.3)
+            table_height = TABLE_ROW_HEIGHT * (rows + 1)
+            table = slide.shapes.add_table(rows + 1, cols, SLIDE_LEFT, table_top, SLIDE_CONTENT_WIDTH, table_height).table
+            for r_idx in range(rows + 1):
+                table.rows[r_idx].height = TABLE_ROW_HEIGHT
+            for i, col in enumerate(display_df.columns):
+                cell = table.cell(0, i)
+                cell.text = str(col)
+                cell.text_frame.paragraphs[0].font.size = Pt(11)
             for r in range(rows):
-                for c in range(cols): table.cell(r + 1, c).text = str(display_df.iloc[r, c])
+                for c in range(cols):
+                    cell = table.cell(r + 1, c)
+                    cell.text = str(display_df.iloc[r, c])
+                    cell.text_frame.paragraphs[0].font.size = Pt(10)
             if len(table_df) > MAX_TABLE_ROWS:
-                note = slide.shapes.add_textbox(Inches(0.5), Inches(7.1), Inches(9), Inches(0.3))
+                note_top = table_top + table_height + Inches(0.1)
+                note = slide.shapes.add_textbox(SLIDE_LEFT, note_top, SLIDE_CONTENT_WIDTH, Inches(0.3))
                 note.text_frame.text = f"僅顯示前 {MAX_TABLE_ROWS} 筆，完整資料請見網頁畫面"
         return slide
 
     if st.sidebar.button("📊 導出完整戰情室報表"):
         with export_color_theme():
             prs = Presentation()
+            prs.slide_width = Inches(13.333)
+            prs.slide_height = Inches(10)
 
             add_chart_slide(prs, "北美設備戰術分佈", build_map_fig(f_df), None, chart_height=700)
 
