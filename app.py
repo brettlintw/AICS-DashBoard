@@ -56,6 +56,12 @@ US_STATES_COORDS = {'AL': [32.8, -86.7], 'AK': [61.3, -152.4], 'AZ': [33.7, -111
 BUBBLE_COLORS = ['#e6194B', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#42d4f4', '#f032e6', '#469990', '#9A6324', '#000075']
 
 
+def get_machine_type_colors(f_df):
+    # 跟地圖氣泡用同一套配色規則，讓排名長條圖跟地圖上的顏色能對得起來。
+    types = f_df['Machine Type'].unique()
+    return {m: BUBBLE_COLORS[i % len(BUBBLE_COLORS)] for i, m in enumerate(types)}
+
+
 @contextmanager
 def export_color_theme():
     # Streamlit 會把圖表顏色暫時換成佔位色（如 #000001），交給瀏覽器顯示時才轉成真正顏色；
@@ -98,6 +104,7 @@ def build_map_fig(f_df):
         return band % 2
 
     all_states = list(US_STATES_COORDS.keys())
+    type_colors = get_machine_type_colors(f_df)
     fig_map = go.Figure()
     fig_map.add_trace(go.Choropleth(
         locations=all_states, locationmode="USA-states", z=[flag_zone(s) for s in all_states],
@@ -105,11 +112,11 @@ def build_map_fig(f_df):
         colorscale=[[0, TRANSPARENT], [0.33, TRANSPARENT], [0.34, STRIPE_RED], [0.66, STRIPE_RED], [0.67, CANTON_BLUE], [1, CANTON_BLUE]],
     ))
     fig_map.add_trace(go.Scattergeo(lon=[US_STATES_COORDS[s][1] for s in US_STATES_COORDS], lat=[US_STATES_COORDS[s][0] for s in US_STATES_COORDS], text=list(US_STATES_COORDS.keys()), mode='text', textfont=dict(size=14, color='blue'), showlegend=False))
-    for i, m in enumerate(f_df['Machine Type'].unique()):
+    for m in f_df['Machine Type'].unique():
         m_df = f_df[f_df['Machine Type'] == m].groupby('State Code')['Outbound Qty (Item)'].sum().reset_index()
         fig_map.add_trace(go.Scattergeo(locations=m_df['State Code'], locationmode="USA-states",
                                          marker=dict(size=m_df['Outbound Qty (Item)'].apply(scaled_size),
-                                                      color=BUBBLE_COLORS[i % len(BUBBLE_COLORS)],
+                                                      color=type_colors[m],
                                                       line=dict(width=1, color='white')),
                                          text=m_df['Outbound Qty (Item)'], hovertemplate="%{location}: %{text}<extra></extra>",
                                          name=m))
@@ -118,6 +125,19 @@ def build_map_fig(f_df):
         paper_bgcolor='white',
         height=600, margin={"l": 0, "r": 0, "t": 0, "b": 60}, legend=dict(orientation='h', x=0.5, xanchor='center', y=-0.1))
     return fig_map
+
+
+def build_type_rank_fig(f_df):
+    type_summary = f_df.groupby('Machine Type')['Outbound Qty (Item)'].sum()
+    type_colors = get_machine_type_colors(f_df)
+    fig = go.Figure(go.Bar(
+        x=type_summary.values, y=type_summary.index, orientation='h',
+        marker_color=[type_colors[m] for m in type_summary.index],
+        text=type_summary.values, textposition='outside'))
+    fig.update_layout(
+        yaxis=dict(categoryorder='total ascending', title=None), xaxis=dict(title='出貨量'),
+        height=280, margin={"l": 10, "r": 30, "t": 10, "b": 30}, showlegend=False)
+    return fig
 
 
 def build_dim_fig(df_g, dim, mode, chart_type):
@@ -286,6 +306,10 @@ else:
     fig_map = build_map_fig(f_df)
     st.plotly_chart(fig_map, use_container_width=True)
 
+    st.markdown("##### 📊 設備類型出貨量排名")
+    fig_type_rank = build_type_rank_fig(f_df)
+    st.plotly_chart(fig_type_rank, use_container_width=True)
+
     # 五大分析維度
     dim_exports = []
     for dim, name in dims:
@@ -366,6 +390,9 @@ else:
             prs, cfg = make_report_presentation(bg_template_file.getvalue() if bg_template_file else None)
 
             add_chart_slide(prs, cfg, "北美設備戰術分佈", build_map_fig(f_df), None, is_map=True)
+
+            type_rank_df = f_df.groupby('Machine Type')['Outbound Qty (Item)'].sum().sort_values(ascending=False).reset_index()
+            add_chart_slide(prs, cfg, "設備類型出貨量排名", build_type_rank_fig(f_df), type_rank_df)
 
             for name, dim, mode, chart_type, df_g in dim_exports:
                 add_chart_slide(prs, cfg, f"分析維度: {name}", build_dim_fig(df_g, dim, mode, chart_type), df_g)
