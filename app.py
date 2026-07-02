@@ -77,6 +77,64 @@ if uploaded_file:
             st.plotly_chart(fig, use_container_width=True)
             if show_table: st.dataframe(df_g, use_container_width=True)
 
+    # 客戶經營洞察：ABC 分析 + 流失預警
+    st.markdown("---")
+    st.subheader("🎯 客戶經營洞察")
+
+    dim_filtered_df = df.copy()
+    for col, selected in filters.items():
+        dim_filtered_df = dim_filtered_df[dim_filtered_df[col].isin(selected)]
+
+    tab_abc, tab_churn = st.tabs(["📊 客戶 ABC 分析", "⚠️ 流失預警"])
+
+    with tab_abc:
+        abc_df = f_df.groupby('Company')['Outbound Qty (Item)'].sum().reset_index()
+        abc_df = abc_df.sort_values('Outbound Qty (Item)', ascending=False).reset_index(drop=True)
+        total_qty = abc_df['Outbound Qty (Item)'].sum()
+        abc_df['累計佔比(%)'] = (abc_df['Outbound Qty (Item)'].cumsum() / total_qty * 100).round(1) if total_qty else 0
+        abc_df['分級'] = abc_df['累計佔比(%)'].apply(lambda p: 'A' if p <= 80 else ('B' if p <= 95 else 'C'))
+
+        grade_count = abc_df['分級'].value_counts().reindex(['A', 'B', 'C']).fillna(0).astype(int)
+        m1, m2, m3 = st.columns(3)
+        for col_m, grade in zip([m1, m2, m3], ['A', 'B', 'C']):
+            cnt = grade_count.get(grade, 0)
+            pct = cnt / len(abc_df) * 100 if len(abc_df) else 0
+            col_m.metric(label=f"{grade} 級客戶", value=f"{cnt} 家", delta=f"佔客戶數 {pct:.1f}%")
+        st.caption("A級：累計貢獻前80%出貨量的核心客戶；B級：80~95%；C級：長尾客戶")
+
+        fig_abc = go.Figure()
+        fig_abc.add_trace(go.Bar(x=abc_df['Company'], y=abc_df['Outbound Qty (Item)'], name='出貨量',
+                                  marker_color=abc_df['分級'].map({'A': '#d62728', 'B': '#ff7f0e', 'C': '#1f77b4'})))
+        fig_abc.add_trace(go.Scatter(x=abc_df['Company'], y=abc_df['累計佔比(%)'], name='累計佔比(%)',
+                                      yaxis='y2', mode='lines+markers'))
+        fig_abc.update_layout(
+            yaxis=dict(title='出貨量'),
+            yaxis2=dict(title='累計佔比(%)', overlaying='y', side='right', range=[0, 100]),
+            height=500, xaxis_tickangle=45, legend=dict(x=1.05, y=1))
+        st.plotly_chart(fig_abc, use_container_width=True)
+        st.dataframe(abc_df, use_container_width=True)
+
+    with tab_churn:
+        churn_threshold = st.slider("流失警戒門檻（月）", min_value=1, max_value=12, value=3)
+        ref_date = df['Date(出庫)'].max()
+        last_ship = dim_filtered_df.groupby('Company')['Date(出庫)'].max().reset_index()
+        last_ship.columns = ['Company', '最後出貨日']
+        last_ship['距今月數'] = ((ref_date - last_ship['最後出貨日']).dt.days / 30).round(1)
+        last_ship['最後出貨日'] = last_ship['最後出貨日'].dt.date
+        churn_list = last_ship[last_ship['距今月數'] >= churn_threshold].sort_values('距今月數', ascending=False)
+
+        pct_churn = len(churn_list) / len(last_ship) * 100 if len(last_ship) else 0
+        st.metric("流失預警客戶數", f"{len(churn_list)} 家", delta=f"佔全體客戶 {pct_churn:.1f}%")
+
+        if len(churn_list) > 0:
+            fig_churn = px.bar(churn_list, x='Company', y='距今月數', color='距今月數',
+                                color_continuous_scale='Reds', title=f"超過 {churn_threshold} 個月無出貨的客戶")
+            fig_churn.update_xaxes(tickangle=45)
+            st.plotly_chart(fig_churn, use_container_width=True)
+            st.dataframe(churn_list, use_container_width=True)
+        else:
+            st.success("目前沒有符合流失警戒門檻的客戶")
+
     # PPTX 導出
     if st.sidebar.button("📊 導出完整戰情室報表"):
         prs = Presentation()
