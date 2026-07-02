@@ -6,7 +6,6 @@ from pptx import Presentation
 from pptx.util import Inches, Pt
 import io
 import os
-import base64
 import plotly.io as pio
 from contextlib import contextmanager
 
@@ -56,14 +55,6 @@ US_STATES_COORDS = {'AL': [32.8, -86.7], 'AK': [61.3, -152.4], 'AZ': [33.7, -111
 # 高對比氣泡配色（避免預設色系太相近分不清楚）
 BUBBLE_COLORS = ['#e6194B', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#42d4f4', '#f032e6', '#469990', '#9A6324', '#000075']
 
-FLAG_IMAGE_PATH = os.path.join(os.path.dirname(__file__), "assets", "us_flag.png")
-
-
-@st.cache_data
-def load_flag_data_uri():
-    with open(FLAG_IMAGE_PATH, "rb") as f:
-        return "data:image/png;base64," + base64.b64encode(f.read()).decode()
-
 
 @contextmanager
 def export_color_theme():
@@ -90,7 +81,29 @@ def build_map_fig(f_df):
             return MAX_BUBBLE
         return MIN_BUBBLE + (qty - qty_min) / (qty_max - qty_min) * (MAX_BUBBLE - MIN_BUBBLE)
 
+    # 國旗效果直接畫在各州的實際圖形上（Choropleth），而不是疊一張背景圖片，
+    # 這樣顏色保證只會出現在真正畫出州界的地方，不會跑到地圖以外的空白區域。
+    CANTON_STATES = {'WA', 'OR', 'ID', 'MT', 'WY', 'ND', 'SD', 'MN'}
+    STRIPE_RED = 'rgba(178,34,52,0.16)'
+    CANTON_BLUE = 'rgba(60,59,110,0.18)'
+    TRANSPARENT = 'rgba(255,255,255,0)'
+    N_BANDS = 9
+    lats = [v[0] for v in US_STATES_COORDS.values()]
+    lat_min, lat_max = min(lats), max(lats)
+
+    def flag_zone(state):
+        if state in CANTON_STATES:
+            return 2
+        band = int((lat_max - US_STATES_COORDS[state][0]) / (lat_max - lat_min + 1e-9) * N_BANDS)
+        return band % 2
+
+    all_states = list(US_STATES_COORDS.keys())
     fig_map = go.Figure()
+    fig_map.add_trace(go.Choropleth(
+        locations=all_states, locationmode="USA-states", z=[flag_zone(s) for s in all_states],
+        zmin=0, zmax=2, showscale=False, hoverinfo='skip', marker_line_color='rgba(0,0,0,0)',
+        colorscale=[[0, TRANSPARENT], [0.33, TRANSPARENT], [0.34, STRIPE_RED], [0.66, STRIPE_RED], [0.67, CANTON_BLUE], [1, CANTON_BLUE]],
+    ))
     fig_map.add_trace(go.Scattergeo(lon=[US_STATES_COORDS[s][1] for s in US_STATES_COORDS], lat=[US_STATES_COORDS[s][0] for s in US_STATES_COORDS], text=list(US_STATES_COORDS.keys()), mode='text', textfont=dict(size=14, color='blue'), showlegend=False))
     for i, m in enumerate(f_df['Machine Type'].unique()):
         m_df = f_df[f_df['Machine Type'] == m].groupby('State Code')['Outbound Qty (Item)'].sum().reset_index()
@@ -101,13 +114,8 @@ def build_map_fig(f_df):
                                          text=m_df['Outbound Qty (Item)'], hovertemplate="%{location}: %{text}<extra></extra>",
                                          name=m))
     fig_map.update_layout(
-        geo=dict(scope='usa', projection=dict(type='albers usa'),
-                 landcolor='rgba(255,255,255,0.5)', lakecolor='rgba(255,255,255,0.3)',
-                 bgcolor='white', subunitcolor='#9aa5b1'),
-        images=[dict(source=load_flag_data_uri(), xref="paper", yref="paper",
-                     x=0, y=1, sizex=1, sizey=1, xanchor="left", yanchor="top",
-                     sizing="stretch", opacity=0.16, layer="below")],
-        paper_bgcolor='white', plot_bgcolor='rgba(0,0,0,0)',
+        geo=dict(scope='usa', projection=dict(type='albers usa'), landcolor='#fbfbfd', lakecolor='#fbfbfd', bgcolor='white', subunitcolor='#9aa5b1'),
+        paper_bgcolor='white',
         height=600, margin={"l": 0, "r": 0, "t": 0, "b": 60}, legend=dict(orientation='h', x=0.5, xanchor='center', y=-0.1))
     return fig_map
 
